@@ -2,7 +2,7 @@ import { apiFetch } from "./apiClient";
 import type {
   WarehouseInventory,
   CreateWarehouseInventoryCommand,
-  UpdateWarehouseInventoryQuantityCommand,
+  // UpdateWarehouseInventoryQuantityCommand,
 } from "../types";
 
 export const warehouseInventoryApi = {

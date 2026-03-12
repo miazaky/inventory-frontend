@@ -1,8 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'); */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 /* ── Design tokens ───────────────────────────────────────────────────────── */
 :root {
@@ -439,23 +435,6 @@ textarea.input {
 .btn-sm  { padding: 5px 10px; font-size: 12.5px; }
 .btn-lg  { padding: 10px 20px; font-size: 14.5px; }
 .btn-full { width: 100%; }
-
-/* Legacy Tailwind-compat shims (used in your existing pages) */
-.btn-primary-tw {
-  @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
-         bg-indigo-600 text-white hover:bg-indigo-700
-         disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
-}
-.btn-secondary-tw {
-  @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
-         bg-white text-gray-700 border border-gray-200 hover:bg-gray-50
-         disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
-}
-.btn-danger-tw {
-  @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
-         bg-red-600 text-white hover:bg-red-700
-         disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
-}
 
 /* ── Badges ──────────────────────────────────────────────────────────────── */
 .badge {

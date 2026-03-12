@@ -26,7 +26,7 @@ export function TransfersPage() {
     setSuccess(false);
     try {
       if (form.fromWarehouseId === form.toWarehouseId) {
-        throw new Error("Source and destination warehouses must be different.");
+        throw new Error("Šaltinio ir paskirties sandėliai turi skirtis.");
       }
       const cmd: TransferInventoryCommand = {
         productId: form.productId,
@@ -38,7 +38,7 @@ export function TransfersPage() {
       setSuccess(true);
       setForm({ productId: "", fromWarehouseId: "", toWarehouseId: "", quantity: "" });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Transfer failed");
+      setError(e instanceof Error ? e.message : "Perkėlimas nepavyko");
     } finally {
       setSaving(false);
     }
@@ -55,73 +55,75 @@ export function TransfersPage() {
     Number(form.quantity) > 0;
 
   return (
-    <div className="p-6 max-w-2xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Perkėlimai</h1>
-        {/* <p className="text-sm text-gray-500 mt-1">Move stock from one warehouse to another</p> */}
+    <div className="page">
+      <div className="page-header">
+        <div className="page-header-left">
+          <h1 className="page-title">Perkėlimai</h1>
+          {/* <p className="page-subtitle">Perkelti prekes iš vieno sandėlio į kitą</p> */}
+        </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
-        {error && <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm">{error}</div>}
-        {success && (
-          <div className="p-3 bg-green-50 text-green-700 rounded-lg text-sm flex items-center gap-2">
-            ✅ Perkėlimas sėkmingas!
+      <div className="card">
+        <div className="card-body">
+          <div className="form-stack">
+            {error && <div className="alert alert-error">⚠ {error}</div>}
+            {success && <div className="alert alert-success">✅ Perkėlimas sėkmingas!</div>}
+
+            <SelectInput
+              label="Produktas"
+              value={form.productId}
+              onChange={(v) => setForm((f) => ({ ...f, productId: v }))}
+              options={productOptions}
+              required
+            />
+
+            <div className="form-grid-2">
+              <SelectInput
+                label="Iš sandėlio"
+                value={form.fromWarehouseId}
+                onChange={(v) => setForm((f) => ({ ...f, fromWarehouseId: v }))}
+                options={warehouseOptions}
+                required
+              />
+              <SelectInput
+                label="Į sandėlį"
+                value={form.toWarehouseId}
+                onChange={(v) => setForm((f) => ({ ...f, toWarehouseId: v }))}
+                options={warehouseOptions.filter((o) => o.value !== form.fromWarehouseId)}
+                required
+              />
+            </div>
+
+            {/* Visual transfer arrow */}
+            {form.fromWarehouseId && form.toWarehouseId && (
+              <div className="transfer-visual">
+                <span className="transfer-pill from">
+                  {warehouses.find((w) => w.id === form.fromWarehouseId)?.name}
+                </span>
+                <span style={{ fontSize: 20, color: "var(--text-3)" }}>→</span>
+                <span className="transfer-pill to">
+                  {warehouses.find((w) => w.id === form.toWarehouseId)?.name}
+                </span>
+              </div>
+            )}
+
+            <div className="form-group">
+              <label className="form-label">Kiekis <span className="req">*</span></label>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                value={form.quantity}
+                onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
+                placeholder="pvz. 50"
+              />
+            </div>
+
+            <button onClick={handleSubmit} disabled={saving || !isValid} className="btn btn-primary btn-full">
+              {saving ? "Perkeliama..." : "Perkelti į sandėlį"}
+            </button>
           </div>
-        )}
-
-        <SelectInput
-          label="Produktas"
-          value={form.productId}
-          onChange={(v) => setForm((f) => ({ ...f, productId: v }))}
-          options={productOptions}
-          required
-        />
-
-        <div className="grid grid-cols-2 gap-4">
-          <SelectInput
-            label="Iš sandėlio"
-            value={form.fromWarehouseId}
-            onChange={(v) => setForm((f) => ({ ...f, fromWarehouseId: v }))}
-            options={warehouseOptions}
-            required
-          />
-          <SelectInput
-            label="Į sandėlį"
-            value={form.toWarehouseId}
-            onChange={(v) => setForm((f) => ({ ...f, toWarehouseId: v }))}
-            options={warehouseOptions.filter((o) => o.value !== form.fromWarehouseId)}
-            required
-          />
         </div>
-
-        {/* Visual transfer arrow */}
-        {form.fromWarehouseId && form.toWarehouseId && (
-          <div className="flex items-center justify-center gap-3 py-2">
-            <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-medium">
-              {warehouses.find((w) => w.id === form.fromWarehouseId)?.name}
-            </span>
-            <span className="text-2xl text-gray-400">→</span>
-            <span className="px-3 py-1 bg-teal-50 text-teal-700 rounded-lg text-sm font-medium">
-              {warehouses.find((w) => w.id === form.toWarehouseId)?.name}
-            </span>
-          </div>
-        )}
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Kiekis <span className="text-red-500">*</span></label>
-          <input
-            className="input"
-            type="number"
-            min={1}
-            value={form.quantity}
-            onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
-            placeholder="e.g. 50"
-          />
-        </div>
-
-        <button onClick={handleSubmit} disabled={saving || !isValid} className="btn-primary w-full justify-center">
-          {saving ? "Perkeliama..." : "Perkelti į sandėlį"}
-        </button>
       </div>
     </div>
   );

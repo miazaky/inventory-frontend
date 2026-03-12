@@ -14,10 +14,7 @@ interface ProductFormData {
 const emptyForm: ProductFormData = { sku: "", name: "", length: "", description: "" };
 
 function ProductForm({
-  initial,
-  onSubmit,
-  onCancel,
-  loading,
+  initial, onSubmit, onCancel, loading,
 }: {
   initial?: ProductFormData;
   onSubmit: (data: ProductFormData) => void;
@@ -29,29 +26,29 @@ function ProductForm({
     setForm((f) => ({ ...f, [field]: e.target.value }));
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">SKU</label>
-          <input className="input" value={form.sku} onChange={set("sku")} placeholder="e.g. SKU-001" />
+    <div className="form-stack">
+      <div className="form-grid-2">
+        <div className="form-group">
+          <label className="form-label">SKU</label>
+          <input className="input" value={form.sku} onChange={set("sku")} placeholder="pvz. SKU-001" />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Name <span className="text-red-500">*</span></label>
-          <input className="input" value={form.name} onChange={set("name")} placeholder="Product name" required />
+        <div className="form-group">
+          <label className="form-label">Pavadinimas <span className="req">*</span></label>
+          <input className="input" value={form.name} onChange={set("name")} placeholder="Produkto pavadinimas" required />
         </div>
       </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Length (cm)</label>
-        <input className="input" type="number" value={form.length} onChange={set("length")} placeholder="e.g. 120" />
+      <div className="form-group">
+        <label className="form-label">Ilgis (cm)</label>
+        <input className="input" type="number" value={form.length} onChange={set("length")} placeholder="pvz. 120" />
       </div>
-      {/* <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-        <textarea className="input resize-none" rows={3} value={form.description} onChange={set("description")} placeholder="Optional description" />
+      {/* <div className="form-group">
+        <label className="form-label">Aprašymas</label>
+        <textarea className="input" rows={3} value={form.description} onChange={set("description")} placeholder="Neprivalomas aprašymas" />
       </div> */}
-      <div className="flex gap-3 pt-2 justify-end">
-        <button onClick={onCancel} className="btn-secondary">Cancel</button>
-        <button onClick={() => onSubmit(form)} disabled={loading || !form.name} className="btn-primary">
-          {loading ? "Saving..." : "Save"}
+      <div className="modal-footer">
+        <button onClick={onCancel} className="btn btn-secondary">Atšaukti</button>
+        <button onClick={() => onSubmit(form)} disabled={loading || !form.name} className="btn btn-primary">
+          {loading ? "Saugoma..." : "Išsaugoti"}
         </button>
       </div>
     </div>
@@ -137,57 +134,58 @@ export function ProductsPage() {
   };
 
   const columns = [
-    { key: "sku", header: "Kodas", render: (p: Product) => <span className="font-mono text-xs">{p.sku || "—"}</span> },
-    { key: "name", header: "Pavadinimas", render: (p: Product) => <span className="font-medium">{p.name || "—"}</span> },
+    { key: "sku", header: "Kodas", render: (p: Product) => <span className="mono">{p.sku || "—"}</span> },
+    { key: "name", header: "Pavadinimas", render: (p: Product) => <span style={{ fontWeight: 500 }}>{p.name || "—"}</span> },
     { key: "length", header: "Ilgis", render: (p: Product) => p.length != null ? `${p.length} cm` : "—" },
     // { key: "description", header: "Description", render: (p: Product) => <span className="text-gray-500 text-xs">{p.description || "—"}</span> },
     {
       key: "actions",
       header: "Veiksmai",
       render: (p: Product) => (
-        <div className="flex gap-2">
-          <button onClick={() => setEditing(p)} className="text-indigo-600 hover:text-indigo-800 text-xs font-medium">Edit</button>
-          <button onClick={() => setDeleting(p)} className="text-red-500 hover:text-red-700 text-xs font-medium">Delete</button>
+        <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+          <button onClick={() => setEditing(p)} className="btn btn-ghost btn-icon" title="Redaguoti">✏️</button>
+          <button onClick={() => setDeleting(p)} className="btn btn-ghost-danger btn-icon" title="Ištrinti">🗑️</button>
         </div>
       ),
     },
   ];
 
   const filteredProducts = products.filter((p) =>
-    `${p.name ?? ""} ${p.sku ?? ""}`
-      .toLowerCase()
-      .includes(search.toLowerCase())
+    `${p.name ?? ""} ${p.sku ?? ""}`.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Medžiagos</h1>
-          {/* <p className="text-sm text-gray-500 mt-1">{products.length} total</p> */}
+    <div className="page">
+      <div className="page-header">
+        <div className="page-header-left">
+          <h1 className="page-title">Medžiagos</h1>
+          {/* <p className="page-subtitle">{products.length} iš viso</p> */}
         </div>
-        <input
-          type="text"
-          placeholder="Search by name or SKU..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="input max-w-sm"
-        />
-        <button onClick={() => setShowAdd(true)} className="btn-primary">+ Pridėti naują produktą</button>
+        <div className="page-header-actions">
+          <input
+            type="text"
+            placeholder="Ieškoti pagal pavadinimą ar SKU..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input"
+            style={{ width: 240 }}
+          />
+          <button onClick={() => setShowAdd(true)} className="btn btn-primary">+ Pridėti naują produktą</button>
+        </div>
       </div>
 
-      {error && <div className="p-4 bg-red-50 text-red-600 rounded-xl text-sm">{error}</div>}
+      {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>⚠ {error}</div>}
 
-      <Table columns={columns} data={filteredProducts} keyExtractor={(p) => p.id} loading={loading} emptyMessage="No products found." />
+      <Table columns={columns} data={filteredProducts} keyExtractor={(p) => p.id} loading={loading} emptyMessage="Produktų nerasta." />
 
       {showAdd && (
-        <Modal title="Add Product" onClose={() => setShowAdd(false)}>
+        <Modal title="Pridėti produktą" onClose={() => setShowAdd(false)}>
           <ProductForm onSubmit={handleCreate} onCancel={() => setShowAdd(false)} loading={saving} />
         </Modal>
       )}
 
       {editing && (
-        <Modal title="Edit Product" onClose={() => setEditing(null)}>
+        <Modal title="Redaguoti produktą" onClose={() => setEditing(null)}>
           <ProductForm
             initial={{ sku: editing.sku || "", name: editing.name || "", length: editing.length?.toString() || "", description: editing.description || "" }}
             onSubmit={handleUpdate}
@@ -198,11 +196,15 @@ export function ProductsPage() {
       )}
 
       {deleting && (
-        <Modal title="Delete Product" onClose={() => setDeleting(null)} size="sm">
-          <p className="text-gray-600 mb-6">Are you sure you want to delete <strong>{deleting.name}</strong>? This action cannot be undone.</p>
-          <div className="flex gap-3 justify-end">
-            <button onClick={() => setDeleting(null)} className="btn-secondary">Cancel</button>
-            <button onClick={handleDelete} disabled={saving} className="btn-danger">{saving ? "Deleting..." : "Delete"}</button>
+        <Modal title="Ištrinti produktą" onClose={() => setDeleting(null)} size="sm">
+          <p style={{ color: "var(--text-2)", fontSize: 14, marginBottom: 0 }}>
+            Ar tikrai norite ištrinti <strong>{deleting.name}</strong>? Šio veiksmo negalima atšaukti.
+          </p>
+          <div className="modal-footer">
+            <button onClick={() => setDeleting(null)} className="btn btn-secondary">Atšaukti</button>
+            <button onClick={handleDelete} disabled={saving} className="btn btn-danger">
+              {saving ? "Trinama..." : "Ištrinti"}
+            </button>
           </div>
         </Modal>
       )}

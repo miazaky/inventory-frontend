@@ -1,48 +1,19 @@
-interface SelectOption {
-  value: string;
-  label: string;
-}
-
+interface SelectOption { value: string; label: string; }
 interface SelectInputProps {
-  label?: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: SelectOption[];
-  placeholder?: string;
-  required?: boolean;
-  disabled?: boolean;
+  label?: string; value: string; onChange: (value: string) => void;
+  options: SelectOption[]; placeholder?: string; required?: boolean; disabled?: boolean;
 }
-
-export function SelectInput({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder = "Select...",
-  required,
-  disabled,
-}: SelectInputProps) {
+export function SelectInput({ label, value, onChange, options, placeholder = "Pasirinkti...", required, disabled }: SelectInputProps) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="form-group">
       {label && (
-        <label className="text-sm font-medium text-gray-700">
-          {label}
-          {required && <span className="text-red-500 ml-0.5">*</span>}
+        <label className="form-label">
+          {label}{required && <span className="req">*</span>}
         </label>
       )}
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        required={required}
-        disabled={disabled}
-        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-      >
+      <select value={value} onChange={(e) => onChange(e.target.value)} required={required} disabled={disabled} className="input">
         <option value="">{placeholder}</option>
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
+        {options.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
       </select>
     </div>
   );

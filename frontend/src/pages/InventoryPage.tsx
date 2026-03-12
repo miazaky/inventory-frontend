@@ -2,12 +2,7 @@ import { useEffect, useState } from "react";
 import { warehouseInventoryApi } from "../api/warehouseInventory";
 import { productsApi } from "../api/products";
 import { warehousesApi } from "../api/warehouses";
-import type {
-  WarehouseInventory,
-  Product,
-  Warehouse,
-  CreateWarehouseInventoryCommand,
-} from "../types";
+import type { WarehouseInventory, Product, Warehouse, CreateWarehouseInventoryCommand } from "../types";
 import { Table } from "../components/Table";
 import { Modal } from "../components/Modal";
 import { Badge } from "../components/Badge";
@@ -25,10 +20,7 @@ export function InventoryPage() {
   const [editQty, setEditQty] = useState<WarehouseInventory | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Add form state
-  const [addForm, setAddForm] = useState({
-    warehouseId: "", productId: "", quantityCurrent: "", quantityMin: "", quantityMax: "",
-  });
+  const [addForm, setAddForm] = useState({ warehouseId: "", productId: "", quantityCurrent: "", quantityMin: "", quantityMax: "" });
   const [newQty, setNewQty] = useState("");
 
   const load = async () => {
@@ -93,25 +85,26 @@ export function InventoryPage() {
   const stockLabel = (item: WarehouseInventory) => {
     if (item.quantityCurrent <= item.quantityMin) return "Mažas";
     if (item.quantityCurrent >= item.quantityMax) return "Pilnas";
-    return "Gerai";
+    return "Geras";
   };
 
   const columns = [
-    { key: "product", header: "Pavadinimas", render: (i: WarehouseInventory) => <span className="font-medium">{productMap[i.productId]?.name || i.productId.slice(0, 8) + "…"}</span> },
+    { key: "product", header: "Pavadinimas", render: (i: WarehouseInventory) => <span style={{ fontWeight: 500 }}>{productMap[i.productId]?.name || i.productId.slice(0, 8) + "…"}</span> },
     // { key: "warehouse", header: "Sandėlis", render: (i: WarehouseInventory) => warehouseMap[i.warehouseId]?.name || i.warehouseId.slice(0, 8) + "…" },
-    { key: "quantityCurrent", header: "Kiekis", render: (i: WarehouseInventory) => <span className="font-semibold">{i.quantityCurrent}</span> },
+    { key: "quantityCurrent", header: "Kiekis", render: (i: WarehouseInventory) => <span style={{ fontWeight: 600 }}>{i.quantityCurrent}</span> },
     // { key: "quantityMin", header: "Min", render: (i: WarehouseInventory) => i.quantityMin },
     // { key: "quantityMax", header: "Max", render: (i: WarehouseInventory) => i.quantityMax },
-    { key: "status", header: "Statusas", render: (i: WarehouseInventory) => <Badge variant={stockStatus(i)}>{stockLabel(i)}</Badge> },
+    { key: "status", header: "Statusas", render: (i: WarehouseInventory) => <Badge variant={stockStatus(i) as "red" | "blue" | "green"}>{stockLabel(i)}</Badge> },
     {
       key: "actions", header: "Veiksmai",
       render: (i: WarehouseInventory) => (
-        <button onClick={() => { setEditQty(i); setNewQty(String(i.quantityCurrent)); }} className="text-indigo-600 hover:text-indigo-800 text-xs font-medium">
-          Atnaujinti kiekį
+        <button onClick={() => { setEditQty(i); setNewQty(String(i.quantityCurrent)); }} className="btn btn-ghost btn-sm" style={{ display:"block", margin:"0 auto" }}>
+          ✏️
         </button>
+
       ),
     },
-  ];
+  ]; 
 
   const productOptions = products.map((p) => ({ value: p.id, label: p.name || p.id }));
   const warehouseOptions = warehouses.map((w) => ({ value: w.id, label: w.name || w.id }));
@@ -119,9 +112,7 @@ export function InventoryPage() {
   const filteredInventory = inventory.filter((item) => {
     const product = productMap[item.productId];
     const warehouse = warehouseMap[item.warehouseId];
-
     const searchText = search.toLowerCase();
-
     return (
       product?.name?.toLowerCase().includes(searchText) ||
       warehouse?.name?.toLowerCase().includes(searchText) ||
@@ -130,45 +121,46 @@ export function InventoryPage() {
   });
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Inventorius</h1>
-          {/* <p className="text-sm text-gray-500 mt-1">Stock levels per warehouse</p> */}
+    <div className="page">
+      <div className="page-header">
+        <div className="page-header-left">
+          <h1 className="page-title">Inventorius</h1>
+          {/* <p className="page-subtitle">Kiekiai pagal sandėlį</p> */}
         </div>
-        <input
-          type="text"
-          placeholder="Search by product or quantity..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="input max-w-sm"
-        />
-        <button onClick={() => setShowAdd(true)} className="btn-primary">+ Pridėti naują įrašą</button>
+        <div className="page-header-actions">
+          <input
+            type="text"
+            placeholder="Ieškoti pagal produktą ar kiekį..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input"
+            style={{ width: 260 }}
+          />
+          <button onClick={() => setShowAdd(true)} className="btn btn-primary">+ Pridėti naują įrašą</button>
+        </div>
       </div>
 
-      {error && <div className="p-4 bg-red-50 text-red-600 rounded-xl text-sm">{error}</div>}
+      {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>⚠ {error}</div>}
 
-      <Table columns={columns} data={filteredInventory} keyExtractor={(i) => i.id} loading={loading} emptyMessage="No inventory entries yet." />
+      <Table columns={columns} data={filteredInventory} keyExtractor={(i) => i.id} loading={loading} emptyMessage="Inventoriaus įrašų nerasta." />
 
       {showAdd && (
-        <Modal title="Add Inventory Entry" onClose={() => setShowAdd(false)}>
-          <div className="space-y-4">
-            <SelectInput label="Warehouse" value={addForm.warehouseId} onChange={(v) => setAddForm((f) => ({ ...f, warehouseId: v }))} options={warehouseOptions} required />
-            <SelectInput label="Product" value={addForm.productId} onChange={(v) => setAddForm((f) => ({ ...f, productId: v }))} options={productOptions} required />
-            <div className="grid grid-cols-3 gap-3">
+        <Modal title="Pridėti inventoriaus įrašą" onClose={() => setShowAdd(false)}>
+          <div className="form-stack">
+            <SelectInput label="Sandėlis" value={addForm.warehouseId} onChange={(v) => setAddForm((f) => ({ ...f, warehouseId: v }))} options={warehouseOptions} required />
+            <SelectInput label="Produktas" value={addForm.productId} onChange={(v) => setAddForm((f) => ({ ...f, productId: v }))} options={productOptions} required />
+            <div className="form-grid-3">
               {(["quantityCurrent", "quantityMin", "quantityMax"] as const).map((field) => (
-                <div key={field}>
-                  <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">
-                    {field.replace("quantity", "")}
-                  </label>
+                <div key={field} className="form-group">
+                  <label className="form-label">{field === "quantityCurrent" ? "Kiekis" : field === "quantityMin" ? "Min" : "Max"}</label>
                   <input className="input" type="number" min={0} value={addForm[field]} onChange={(e) => setAddForm((f) => ({ ...f, [field]: e.target.value }))} />
                 </div>
               ))}
             </div>
-            <div className="flex gap-3 justify-end pt-2">
-              <button onClick={() => setShowAdd(false)} className="btn-secondary">Cancel</button>
-              <button onClick={handleAdd} disabled={saving || !addForm.warehouseId || !addForm.productId} className="btn-primary">
-                {saving ? "Saving..." : "Save"}
+            <div className="modal-footer">
+              <button onClick={() => setShowAdd(false)} className="btn btn-secondary">Atšaukti</button>
+              <button onClick={handleAdd} disabled={saving || !addForm.warehouseId || !addForm.productId} className="btn btn-primary">
+                {saving ? "Saugoma..." : "Išsaugoti"}
               </button>
             </div>
           </div>
@@ -176,17 +168,19 @@ export function InventoryPage() {
       )}
 
       {editQty && (
-        <Modal title="Update Quantity" onClose={() => setEditQty(null)} size="sm">
-          <p className="text-sm text-gray-500 mb-4">
-            <strong>{productMap[editQty.productId]?.name}</strong> at <strong>{warehouseMap[editQty.warehouseId]?.name}</strong>
-          </p>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">New quantity</label>
-            <input className="input" type="number" min={0} value={newQty} onChange={(e) => setNewQty(e.target.value)} />
-          </div>
-          <div className="flex gap-3 justify-end pt-4">
-            <button onClick={() => setEditQty(null)} className="btn-secondary">Cancel</button>
-            <button onClick={handleUpdateQty} disabled={saving} className="btn-primary">{saving ? "Saving..." : "Update"}</button>
+        <Modal title="Atnaujinti kiekį" onClose={() => setEditQty(null)} size="sm">
+          <div className="form-stack">
+            <p style={{ fontSize: 13, color: "var(--text-2)", margin: 0 }}>
+              <strong>{productMap[editQty.productId]?.name}</strong> — {warehouseMap[editQty.warehouseId]?.name}
+            </p>
+            <div className="form-group">
+              <label className="form-label">Naujas kiekis</label>
+              <input className="input" type="number" min={0} value={newQty} onChange={(e) => setNewQty(e.target.value)} />
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setEditQty(null)} className="btn btn-secondary">Atšaukti</button>
+              <button onClick={handleUpdateQty} disabled={saving} className="btn btn-primary">{saving ? "Saugoma..." : "Atnaujinti"}</button>
+            </div>
           </div>
         </Modal>
       )}

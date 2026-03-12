@@ -30,6 +30,7 @@ export default function App() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [current, setCurrent] = useState<Page>("dashboard");
+  const logo = "/wirepro.png"
 
   useEffect(() => {
     // Check if we're returning from a Microsoft login redirect
@@ -88,7 +89,9 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <span className="sidebar-logo-icon">☀️</span>
+          <span className="sidebar-logo-icon">
+            <img src={logo} alt="Logo" style={{ width: "100%", height: "100%" }} />
+          </span>
           <div>
             <div className="sidebar-logo-text">Inventorizacija</div>
             <div className="sidebar-logo-sub">Valdymo sistema</div>

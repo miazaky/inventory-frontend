@@ -1,57 +1,113 @@
 import { useEffect, useState } from "react";
 import { productsApi } from "../api/products";
 import type { Product, CreateProductCommand, UpdateProductCommand } from "../types";
-import { Table } from "../components/Table";
 import { Modal } from "../components/Modal";
 
 interface ProductFormData {
   sku: string;
   name: string;
   length: string;
-  description: string;
 }
 
-const emptyForm: ProductFormData = { sku: "", name: "", length: "", description: "" };
+const emptyForm: ProductFormData = { sku: "", name: "", length: "" };
 
-function ProductForm({
-  initial, onSubmit, onCancel, loading,
+function ProductRow({
+  product,
+  onSaved,
+  onDelete,
 }: {
-  initial?: ProductFormData;
-  onSubmit: (data: ProductFormData) => void;
-  onCancel: () => void;
-  loading: boolean;
+  product: Product;
+  onSaved: () => void;
+  onDelete: (p: Product) => void;
 }) {
-  const [form, setForm] = useState<ProductFormData>(initial ?? emptyForm);
-  const set = (field: keyof ProductFormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-    setForm((f) => ({ ...f, [field]: e.target.value }));
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<ProductFormData>({
+    sku: product.sku || "",
+    name: product.name || "",
+    length: product.length?.toString() || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const set = (field: keyof ProductFormData) =>
+    (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const cmd: UpdateProductCommand = {
+        id: product.id,
+        sku: form.sku || undefined,
+        name: form.name,
+        length: form.length ? Number(form.length) : undefined,
+      };
+      await productsApi.update(product.id, cmd);
+      setEditing(false);
+      onSaved();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Klaida");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setForm({
+      sku: product.sku || "",
+      name: product.name || "",
+      length: product.length?.toString() || "",
+    });
+    setError(null);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <>
+        <tr className="row-editing">
+          <td>
+            <input className="input input-inline" value={form.sku} onChange={set("sku")} placeholder="Kodas" />
+          </td>
+          <td>
+            <input className="input input-inline" value={form.name} onChange={set("name")} placeholder="Pavadinimas" />
+          </td>
+          <td>
+            <input className="input input-inline" type="number" value={form.length} onChange={set("length")} placeholder="cm" style={{ width: 90 }} />
+          </td>
+          <td>
+            <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+              <button onClick={handleSave} disabled={saving || !form.name} className="btn btn-primary btn-sm">
+                {saving ? "…" : "✓ Išsaugoti"}
+              </button>
+              <button onClick={handleCancel} className="btn btn-secondary btn-sm">Atšaukti</button>
+            </div>
+          </td>
+        </tr>
+        {error && (
+          <tr>
+            <td colSpan={4}>
+              <div className="alert alert-error" style={{ margin: "4px 0", padding: "6px 10px", fontSize: 12 }}>⚠ {error}</div>
+            </td>
+          </tr>
+        )}
+      </>
+    );
+  }
 
   return (
-    <div className="form-stack">
-      <div className="form-grid-2">
-        <div className="form-group">
-          <label className="form-label">SKU</label>
-          <input className="input" value={form.sku} onChange={set("sku")} placeholder="pvz. SKU-001" />
+    <tr>
+      <td><span className="mono">{product.sku || "—"}</span></td>
+      <td><span style={{ fontWeight: 500 }}>{product.name || "—"}</span></td>
+      <td>{product.length != null ? `${product.length} cm` : "—"}</td>
+      <td>
+        <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+          <button onClick={() => setEditing(true)} className="btn btn-ghost btn-icon" title="Redaguoti">✏️</button>
+          <button onClick={() => onDelete(product)} className="btn btn-ghost-danger btn-icon" title="Ištrinti">🗑️</button>
         </div>
-        <div className="form-group">
-          <label className="form-label">Pavadinimas <span className="req">*</span></label>
-          <input className="input" value={form.name} onChange={set("name")} placeholder="Produkto pavadinimas" required />
-        </div>
-      </div>
-      <div className="form-group">
-        <label className="form-label">Ilgis (cm)</label>
-        <input className="input" type="number" value={form.length} onChange={set("length")} placeholder="pvz. 120" />
-      </div>
-      {/* <div className="form-group">
-        <label className="form-label">Aprašymas</label>
-        <textarea className="input" rows={3} value={form.description} onChange={set("description")} placeholder="Neprivalomas aprašymas" />
-      </div> */}
-      <div className="modal-footer">
-        <button onClick={onCancel} className="btn btn-secondary">Atšaukti</button>
-        <button onClick={() => onSubmit(form)} disabled={loading || !form.name} className="btn btn-primary">
-          {loading ? "Saugoma..." : "Išsaugoti"}
-        </button>
-      </div>
-    </div>
+      </td>
+    </tr>
   );
 }
 
@@ -61,9 +117,9 @@ export function ProductsPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
-  const [editing, setEditing] = useState<Product | null>(null);
-  const [deleting, setDeleting] = useState<Product | null>(null);
+  const [addForm, setAddForm] = useState<ProductFormData>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<Product | null>(null);
 
   const load = async () => {
     try {
@@ -79,38 +135,17 @@ export function ProductsPage() {
 
   useEffect(() => { load(); }, []);
 
-  const handleCreate = async (form: ProductFormData) => {
+  const handleCreate = async () => {
     setSaving(true);
     try {
       const cmd: CreateProductCommand = {
-        sku: form.sku || undefined,
-        name: form.name,
-        length: form.length ? Number(form.length) : undefined,
-        description: form.description || undefined,
+        sku: addForm.sku || undefined,
+        name: addForm.name,
+        length: addForm.length ? Number(addForm.length) : undefined,
       };
       await productsApi.create(cmd);
       setShowAdd(false);
-      load();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleUpdate = async (form: ProductFormData) => {
-    if (!editing) return;
-    setSaving(true);
-    try {
-      const cmd: UpdateProductCommand = {
-        id: editing.id,
-        sku: form.sku || undefined,
-        name: form.name,
-        length: form.length ? Number(form.length) : undefined,
-        // description: form.description || undefined,
-      };
-      await productsApi.update(editing.id, cmd);
-      setEditing(null);
+      setAddForm(emptyForm);
       load();
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : "Error");
@@ -133,24 +168,7 @@ export function ProductsPage() {
     }
   };
 
-  const columns = [
-    { key: "sku", header: "Kodas", render: (p: Product) => <span className="mono">{p.sku || "—"}</span> },
-    { key: "name", header: "Pavadinimas", render: (p: Product) => <span style={{ fontWeight: 500 }}>{p.name || "—"}</span> },
-    { key: "length", header: "Ilgis", render: (p: Product) => p.length != null ? `${p.length} cm` : "—" },
-    // { key: "description", header: "Description", render: (p: Product) => <span className="text-gray-500 text-xs">{p.description || "—"}</span> },
-    {
-      key: "actions",
-      header: "Veiksmai",
-      render: (p: Product) => (
-        <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
-          <button onClick={() => setEditing(p)} className="btn btn-ghost btn-icon" title="Redaguoti">✏️</button>
-          <button onClick={() => setDeleting(p)} className="btn btn-ghost-danger btn-icon" title="Ištrinti">🗑️</button>
-        </div>
-      ),
-    },
-  ];
-
-  const filteredProducts = products.filter((p) =>
+  const filtered = products.filter((p) =>
     `${p.name ?? ""} ${p.sku ?? ""}`.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -159,12 +177,11 @@ export function ProductsPage() {
       <div className="page-header">
         <div className="page-header-left">
           <h1 className="page-title">Medžiagos</h1>
-          {/* <p className="page-subtitle">{products.length} iš viso</p> */}
         </div>
         <div className="page-header-actions">
           <input
             type="text"
-            placeholder="Ieškoti pagal pavadinimą ar SKU..."
+            placeholder="Ieškoti pagal pavadinimą ar kodą..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input"
@@ -176,22 +193,54 @@ export function ProductsPage() {
 
       {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>⚠ {error}</div>}
 
-      <Table columns={columns} data={filteredProducts} keyExtractor={(p) => p.id} loading={loading} emptyMessage="Produktų nerasta." />
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Kodas</th>
+              <th>Pavadinimas</th>
+              <th>Ilgis</th>
+              <th>Veiksmai</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={4} className="td-loading">Kraunama...</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={4} className="td-empty">Produktų nerasta.</td></tr>
+            ) : (
+              filtered.map((p) => (
+                <ProductRow key={p.id} product={p} onSaved={load} onDelete={setDeleting} />
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {showAdd && (
-        <Modal title="Pridėti produktą" onClose={() => setShowAdd(false)}>
-          <ProductForm onSubmit={handleCreate} onCancel={() => setShowAdd(false)} loading={saving} />
-        </Modal>
-      )}
-
-      {editing && (
-        <Modal title="Redaguoti produktą" onClose={() => setEditing(null)}>
-          <ProductForm
-            initial={{ sku: editing.sku || "", name: editing.name || "", length: editing.length?.toString() || "", description: editing.description || "" }}
-            onSubmit={handleUpdate}
-            onCancel={() => setEditing(null)}
-            loading={saving}
-          />
+        <Modal title="Pridėti produktą" onClose={() => { setShowAdd(false); setAddForm(emptyForm); }}>
+          <div className="form-stack">
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label">=Kodas</label>
+                <input className="input" value={addForm.sku} onChange={(e) => setAddForm((f) => ({ ...f, sku: e.target.value }))} placeholder="pvz. MET-001" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Pavadinimas <span className="req">*</span></label>
+                <input className="input" value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} placeholder="Produkto pavadinimas" />
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Ilgis (cm)</label>
+              <input className="input" type="number" value={addForm.length} onChange={(e) => setAddForm((f) => ({ ...f, length: e.target.value }))} placeholder="pvz. 120" />
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => { setShowAdd(false); setAddForm(emptyForm); }} className="btn btn-secondary">Atšaukti</button>
+              <button onClick={handleCreate} disabled={saving || !addForm.name} className="btn btn-primary">
+                {saving ? "Saugoma..." : "Išsaugoti"}
+              </button>
+            </div>
+          </div>
         </Modal>
       )}
 

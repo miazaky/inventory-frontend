@@ -7,15 +7,19 @@ import { ProductsPage } from "./pages/ProductsPage";
 import { WarehousesPage } from "./pages/WarehousesPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { TransfersPage } from "./pages/TransfersPage";
+// import { OrdersPage } from "./pages/OrdersPage";
+import { AllOrdersPage } from "./pages/AllOrdersPage";
 
-type Page = "dashboard" | "products" | "warehouses" | "inventory" | "transfers";
+type Page = "dashboard" | "products" | "warehouses" | "inventory" | "transfers" /*| "orders" */| "allorders";
 
 const navItems: { key: Page; label: string; icon: string }[] = [
-  { key: "dashboard",  label: "Apžvalga",    icon: "📊" },
-  { key: "products",   label: "Medžiagos",   icon: "📦" },
-  { key: "warehouses", label: "Sandėliai",   icon: "🏭" },
-  { key: "inventory",  label: "Inventorius", icon: "🗂️" },
-  { key: "transfers",  label: "Perkėlimai",  icon: "🔀" },
+  { key: "dashboard",  label: "Apžvalga",      icon: "📊" },
+  { key: "products",   label: "Medžiagos",     icon: "📦" },
+  { key: "warehouses", label: "Sandėliai",     icon: "🏭" },
+  { key: "inventory",  label: "Inventorius",   icon: "🗂️" },
+  { key: "transfers",  label: "Perkėlimai",    icon: "🔀" },
+  // { key: "orders",     label: "Užsakymai",     icon: "🛒" },
+  { key: "allorders",  label: "Užs. sąrašas",  icon: "📋" },
 ];
 
 const pages: Record<Page, React.FC> = {
@@ -24,6 +28,8 @@ const pages: Record<Page, React.FC> = {
   warehouses: WarehousesPage,
   inventory:  InventoryPage,
   transfers:  TransfersPage,
+  // orders:     OrdersPage,
+  allorders:  AllOrdersPage,
 };
 
 export default function App() {

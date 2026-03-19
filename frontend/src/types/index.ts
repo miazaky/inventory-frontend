@@ -5,6 +5,7 @@ export interface Product {
   name: string | null;
   length: number | null;
   description: string | null;
+  price: number | null;
 }
 
 export interface CreateProductCommand {
@@ -12,6 +13,7 @@ export interface CreateProductCommand {
   name?: string;
   length?: number;
   description?: string;
+  price?: number;
 }
 
 export interface UpdateProductCommand {
@@ -20,6 +22,19 @@ export interface UpdateProductCommand {
   name?: string;
   length?: number;
   description?: string;
+  price?: number;
+}
+
+// ── Users ─────────────────────────────────────────────────────────────────────
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  deliveryAddress: string;
+  companyCode: string;
+  vatCode: string;
 }
 
 // ── Warehouses ───────────────────────────────────────────────────────────────
@@ -97,6 +112,8 @@ export interface Order {
   id: string;
   warehouseId: string;
   status: string | null;
+  createdDate: string;
+  user: User | null;
   items: OrderItem[] | null;
 }
 
@@ -107,6 +124,7 @@ export interface OrderItem {
 
 export interface CreateOrderCommand {
   warehouseId: string;
+  userId: string;
 }
 
 export interface AddOrderItemCommand {

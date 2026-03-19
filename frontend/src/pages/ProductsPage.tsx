@@ -7,9 +7,10 @@ interface ProductFormData {
   sku: string;
   name: string;
   length: string;
+  price: string;
 }
 
-const emptyForm: ProductFormData = { sku: "", name: "", length: "" };
+const emptyForm: ProductFormData = { sku: "", name: "", length: "", price: "" };
 
 function ProductRow({
   product,
@@ -25,6 +26,7 @@ function ProductRow({
     sku: product.sku || "",
     name: product.name || "",
     length: product.length?.toString() || "",
+    price: product.price?.toString() || "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +44,7 @@ function ProductRow({
         sku: form.sku || undefined,
         name: form.name,
         length: form.length ? Number(form.length) : undefined,
+        price: form.price ? Number(form.price) : undefined,
       };
       await productsApi.update(product.id, cmd);
       setEditing(false);
@@ -58,6 +61,7 @@ function ProductRow({
       sku: product.sku || "",
       name: product.name || "",
       length: product.length?.toString() || "",
+      price: product.price?.toString() || "",
     });
     setError(null);
     setEditing(false);
@@ -77,6 +81,9 @@ function ProductRow({
             <input className="input input-inline" type="number" value={form.length} onChange={set("length")} placeholder="cm" style={{ width: 90 }} />
           </td>
           <td>
+            <input className="input input-inline" type="number" step="0.01" value={form.price} onChange={set("price")} placeholder="0.00" style={{ width: 100 }} />
+          </td>
+          <td>
             <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
               <button onClick={handleSave} disabled={saving || !form.name} className="btn btn-primary btn-sm">
                 {saving ? "…" : "✓ Išsaugoti"}
@@ -87,7 +94,7 @@ function ProductRow({
         </tr>
         {error && (
           <tr>
-            <td colSpan={4}>
+            <td colSpan={5}>
               <div className="alert alert-error" style={{ margin: "4px 0", padding: "6px 10px", fontSize: 12 }}>⚠ {error}</div>
             </td>
           </tr>
@@ -101,6 +108,7 @@ function ProductRow({
       <td><span className="mono">{product.sku || "—"}</span></td>
       <td><span style={{ fontWeight: 500 }}>{product.name || "—"}</span></td>
       <td>{product.length != null ? `${product.length} cm` : "—"}</td>
+      <td>{product.price != null ? `${product.price.toFixed(2)} €` : "—"}</td>
       <td>
         <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
           <button onClick={() => setEditing(true)} className="btn btn-ghost btn-icon" title="Redaguoti">✏️</button>
@@ -142,6 +150,7 @@ export function ProductsPage() {
         sku: addForm.sku || undefined,
         name: addForm.name,
         length: addForm.length ? Number(addForm.length) : undefined,
+        price: addForm.price ? Number(addForm.price) : undefined,
       };
       await productsApi.create(cmd);
       setShowAdd(false);
@@ -200,14 +209,15 @@ export function ProductsPage() {
               <th>Kodas</th>
               <th>Pavadinimas</th>
               <th>Ilgis</th>
+              <th>Kaina</th>
               <th>Veiksmai</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={4} className="td-loading">Kraunama...</td></tr>
+              <tr><td colSpan={5} className="td-loading">Kraunama...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={4} className="td-empty">Produktų nerasta.</td></tr>
+              <tr><td colSpan={5} className="td-empty">Produktų nerasta.</td></tr>
             ) : (
               filtered.map((p) => (
                 <ProductRow key={p.id} product={p} onSaved={load} onDelete={setDeleting} />
@@ -222,7 +232,7 @@ export function ProductsPage() {
           <div className="form-stack">
             <div className="form-grid-2">
               <div className="form-group">
-                <label className="form-label">=Kodas</label>
+                <label className="form-label">Kodas</label>
                 <input className="input" value={addForm.sku} onChange={(e) => setAddForm((f) => ({ ...f, sku: e.target.value }))} placeholder="pvz. MET-001" />
               </div>
               <div className="form-group">
@@ -230,9 +240,15 @@ export function ProductsPage() {
                 <input className="input" value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} placeholder="Produkto pavadinimas" />
               </div>
             </div>
-            <div className="form-group">
-              <label className="form-label">Ilgis (cm)</label>
-              <input className="input" type="number" value={addForm.length} onChange={(e) => setAddForm((f) => ({ ...f, length: e.target.value }))} placeholder="pvz. 120" />
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label">Ilgis (cm)</label>
+                <input className="input" type="number" value={addForm.length} onChange={(e) => setAddForm((f) => ({ ...f, length: e.target.value }))} placeholder="pvz. 120" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Kaina (€)</label>
+                <input className="input" type="number" step="0.01" value={addForm.price} onChange={(e) => setAddForm((f) => ({ ...f, price: e.target.value }))} placeholder="pvz. 9.99" />
+              </div>
             </div>
             <div className="modal-footer">
               <button onClick={() => { setShowAdd(false); setAddForm(emptyForm); }} className="btn btn-secondary">Atšaukti</button>

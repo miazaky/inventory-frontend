@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState, Fragment, type CSSProperties } from "react";
 import { ordersApi } from "../api/orders";
 import { productsApi } from "../api/products";
 import { warehousesApi } from "../api/warehouses";
-import type { Order, Product, Warehouse } from "../types";
+
+import type { Order, Product } from "../types";
 import { Badge } from "../components/Badge";
 
 type StatusFilter = "all" | "pending" | "completed";
@@ -10,7 +11,6 @@ type StatusFilter = "all" | "pending" | "completed";
 export function AllOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -19,10 +19,9 @@ export function AllOrdersPage() {
 
   useEffect(() => {
     Promise.all([ordersApi.getAll(), productsApi.getAll(), warehousesApi.getAll()])
-      .then(([o, p, w]) => {
+      .then(([o, p]) => {
         setOrders(o || []);
         setProducts(p || []);
-        setWarehouses(w || []);
       })
       .catch(() => setError("Nepavyko įkelti užsakymų"))
       .finally(() => setLoading(false));
@@ -155,7 +154,7 @@ export function AllOrdersPage() {
                 }, 0) ?? 0;
 
                 return (
-                  <React.Fragment key={order.id}>
+                  <Fragment key={order.id}>
                     <tr
                       onClick={() => toggleExpand(order.id)}
                       style={{
@@ -212,7 +211,7 @@ export function AllOrdersPage() {
 
                     {expanded && (
                       <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                        <td colSpan={7} style={{ padding: 0, background: "#f5f7ff" }}>
+                        <td colSpan={7} style={{ padding: 0, background: "#f5f7ff", textAlign: "left" }}>
                           <div style={{ paddingLeft: 40 }}>
                             {!itemCount ? (
                               <div style={{ padding: "12px 16px", color: "var(--text-3)", fontStyle: "italic", fontSize: 13 }}>Nėra prekių</div>
@@ -239,18 +238,15 @@ export function AllOrdersPage() {
                                     const prod = productMap[item.productId];
                                     const lineTotal = (prod?.price ?? 0) * item.quantity;
                                     return (
-                                      <tr key={idx} style={{ borderBottom: "1px solid var(--border)", textAlign: "left" }}>
+                                      <tr key={idx} style={{ borderBottom: "1px solid var(--border)" }}>
                                         <td style={td()}>
-                                          <span style={{ fontWeight: 500}}>
+                                          <span style={{ fontWeight: 500 }}>
                                             {prod?.name || (
-                                              <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-3)"}}>
+                                              <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-3)" }}>
                                                 {item.productId.slice(0, 8)}…
                                               </span>
                                             )}
                                           </span>
-                                          {/* {prod?.description && (
-                                            <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>{prod.description}</div>
-                                          )} */}
                                         </td>
                                         <td style={td()}>
                                           <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-2)" }}>
@@ -282,7 +278,7 @@ export function AllOrdersPage() {
                         </td>
                       </tr>
                     )}
-                  </React.Fragment>
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -306,7 +302,7 @@ function SummaryCard({ label, value, color }: { label: string; value: number; co
   );
 }
 
-function th(align: "left" | "center" | "right" = "left"): React.CSSProperties {
+function th(align: "left" | "center" | "right" = "left"): CSSProperties {
   return {
     padding: "9px 12px",
     textAlign: align,
@@ -319,6 +315,6 @@ function th(align: "left" | "center" | "right" = "left"): React.CSSProperties {
   };
 }
 
-function td(): React.CSSProperties {
+function td(): CSSProperties {
   return { padding: "11px 12px", verticalAlign: "middle" };
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { parseTokenFromHash, parseEmailFromToken } from "./auth/msalConfig";
 import { isEmailAllowed } from "./auth/allowedEmails";
 import { LoginPage } from "./pages/LoginPage";

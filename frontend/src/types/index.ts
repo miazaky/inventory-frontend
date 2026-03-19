@@ -124,7 +124,7 @@ export interface OrderItem {
 
 export interface CreateOrderCommand {
   warehouseId: string;
-  userId: string;
+  userId?: string;
 }
 
 export interface AddOrderItemCommand {

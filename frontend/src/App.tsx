@@ -8,9 +8,9 @@ import { WarehousesPage } from "./pages/WarehousesPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { TransfersPage } from "./pages/TransfersPage";
 // import { OrdersPage } from "./pages/OrdersPage";
-// import { AllOrdersPage } from "./pages/AllOrdersPage";
+import { AllOrdersPage } from "./pages/AllOrdersPage";
 
-type Page = "dashboard" | "products" | "warehouses" | "inventory" | "transfers" /*| "orders" | "allorders"*/;
+type Page = "dashboard" | "products" | "warehouses" | "inventory" | "transfers" /*| "orders" */| "allorders";
 
 const navItems: { key: Page; label: string; icon: string }[] = [
   { key: "dashboard",  label: "Apžvalga",      icon: "📊" },
@@ -19,7 +19,7 @@ const navItems: { key: Page; label: string; icon: string }[] = [
   { key: "inventory",  label: "Inventorius",   icon: "🗂️" },
   { key: "transfers",  label: "Perkėlimai",    icon: "🔀" },
   // { key: "orders",     label: "Užsakymai",     icon: "🛒" },
-  // { key: "allorders",  label: "Užs. sąrašas",  icon: "📋" },
+  { key: "allorders",  label: "Užs. sąrašas",  icon: "📋" },
 ];
 
 const pages: Record<Page, React.FC> = {
@@ -29,7 +29,7 @@ const pages: Record<Page, React.FC> = {
   inventory:  InventoryPage,
   transfers:  TransfersPage,
   // orders:     OrdersPage,
-  // allorders:  AllOrdersPage,
+  allorders:  AllOrdersPage,
 };
 
 export default function App() {

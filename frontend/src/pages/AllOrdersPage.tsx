@@ -143,7 +143,7 @@ export function AllOrdersPage() {
           {(["all", "special", "noSpecial"] as ProposalFilter[]).map((f) => (
             <button key={f} onClick={() => setProposalFilter(f)}
               className={`btn btn-sm ${proposalFilter === f ? "btn-primary" : "btn-secondary"}`}>
-              {f === "all" ? "Visi pasiūlymai" : f === "special" ? "Specialus" : "Standartinis"}
+              {f === "all" ? "Visi pasiūlymai" : f === "special" ? "Specialūs" : "Standartiniai"}
             </button>
           ))}
         </div>

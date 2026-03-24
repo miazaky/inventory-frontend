@@ -13,7 +13,7 @@ export function getAuthUrl(): string {
     redirect_uri: authConfig.redirectUri,
     nonce: Math.random().toString(36).slice(2),
   });
-  return `https://login.microsoftonline.com/${authConfig.tenantId}/oauth2/v2.0/authorize?${params}`;
+  return `https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?${params}`;
 }
 
 export function parseTokenFromHash(): string | null {

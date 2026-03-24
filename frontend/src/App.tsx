@@ -17,9 +17,9 @@ const navItems: { key: Page; label: string; icon: string }[] = [
   { key: "products",   label: "Medžiagos",     icon: "📦" },
   { key: "warehouses", label: "Sandėliai",     icon: "🏭" },
   { key: "inventory",  label: "Inventorius",   icon: "🗂️" },
+  { key: "allorders",  label: "Užsakymai",  icon: "📋" },
   { key: "transfers",  label: "Perkėlimai",    icon: "🔀" },
   // { key: "orders",     label: "Užsakymai",     icon: "🛒" },
-  { key: "allorders",  label: "Užs. sąrašas",  icon: "📋" },
 ];
 
 const pages: Record<Page, React.FC> = {

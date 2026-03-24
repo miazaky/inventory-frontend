@@ -20,4 +20,7 @@ export const ordersApi = {
 
   complete: (id: string) =>
     apiFetch<void>(`/api/Orders/${id}/complete`, { method: "POST" }),
+
+  reserve: (id: string) =>
+    apiFetch<void>(`/api/Orders/${id}/complete`, { method: "POST" }), //after change to reserve endpoint, update this to `/api/Orders/${id}/reserve`
 };

@@ -2,27 +2,31 @@ import { useEffect, useState } from "react";
 import { warehouseInventoryApi } from "../api/warehouseInventory";
 import { productsApi } from "../api/products";
 import { warehousesApi } from "../api/warehouses";
+import { ordersApi } from "../api/orders";
 import { Badge } from "../components/Badge";
-import type { WarehouseInventory, Product, Warehouse } from "../types";
+import type { WarehouseInventory, Product, Warehouse, Order } from "../types";
 
 export function DashboardPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [lowStock, setLowStock] = useState<WarehouseInventory[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [p, w, ls] = await Promise.all([
+        const [p, w, ls, o] = await Promise.all([
           productsApi.getAll(),
           warehousesApi.getAll(),
           warehouseInventoryApi.getLowStock(),
+          ordersApi.getAll(),
         ]);
         setProducts(p || []);
         setWarehouses(w || []);
         setLowStock(Array.isArray(ls) ? ls : []);
+        setPendingOrders((o || []).filter((ord) => ord.status?.toLowerCase().includes("pend")));
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Failed to load");
       } finally {
@@ -59,10 +63,10 @@ export function DashboardPage() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon c-teal">🏭</div>
+          <div className="stat-icon c-teal">🕐</div>
           <div>
-            <div className="stat-value">{warehouses.length}</div>
-            <div className="stat-label">Iš viso sandėlių</div>
+            <div className="stat-value">{pendingOrders.length}</div>
+            <div className="stat-label">Užsakymai</div>
           </div>
         </div>
         <div className="stat-card">
@@ -110,22 +114,31 @@ export function DashboardPage() {
         )}
       </div>
 
-      {/* Warehouses list */}
+      {/* Pending orders list */}
       <div className="card">
         <div className="card-header">
-          <span className="card-title">Sandėliai</span>
+          <span className="card-title">Laukiami užsakymai</span>
+          {pendingOrders.length > 0 && <Badge variant="yellow">{pendingOrders.length}</Badge>}
         </div>
-        {warehouses.length === 0 ? (
-          <div style={{ padding: "32px 20px", textAlign: "center", color: "var(--text-3)" }}>Sandėlių dar nėra.</div>
+        {pendingOrders.length === 0 ? (
+          <div style={{ padding: "32px 20px", textAlign: "center", color: "var(--text-3)" }}>✅ Laukiamų užsakymų nėra.</div>
         ) : (
           <div>
-            {warehouses.map((w, i) => (
-              <div key={w.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", borderBottom: i < warehouses.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+            {pendingOrders.map((o, i) => (
+              <div key={o.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", borderBottom: i < pendingOrders.length - 1 ? "1px solid #f1f5f9" : "none" }}>
                 <div>
-                  <div style={{ fontWeight: 500, fontSize: 14 }}>{w.name || "Bevardis"}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>{w.location || "Vieta nenurodyta"}</div>
+                  <div style={{ fontWeight: 500, fontSize: 14 }}>{o.user?.name || <span style={{ color: "var(--text-3)" }}>Svečias</span>}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+                    {o.user?.email || "—"}
+                    {o.user?.phone ? ` · ${o.user.phone}` : ""}
+                    {" · "}
+                    {o.createdDate ? new Date(o.createdDate).toLocaleDateString("lt-LT") : "—"}
+                  </div>
                 </div>
-                <Badge variant="blue">Aktyvus</Badge>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: "var(--text-3)" }}>{o.items?.length ?? 0} prekės</span>
+                  <Badge variant="yellow">Laukiama</Badge>
+                </div>
               </div>
             ))}
           </div>

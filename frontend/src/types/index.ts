@@ -107,12 +107,20 @@ export interface TransferInventoryCommand {
   quantity: number;
 }
 
+
+// ── Order Type ───────────────────────────────────────────────────────────────
+export enum OrderType {
+  SpecialOffer   = 1,
+  NoSpecialOffer = 2,
+}
+
 // ── Orders ───────────────────────────────────────────────────────────────────
 export interface Order {
   id: string;
   warehouseId: string;
   status: string | null;
   createdDate: string;
+  orderType: OrderType | null;
   user: User | null;
   items: OrderItem[] | null;
 }

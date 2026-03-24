@@ -4,13 +4,13 @@ export function LoginPage() {
   const handleLogin = () => {
     window.location.href = getAuthUrl();
   };
-  const logo = "/wirepro.png"
+  const logo = "/MK_juodas_mini_permatomas.png"
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-xl)", boxShadow: "var(--shadow-lg)", padding: "48px 44px", width: "100%", maxWidth: 420, textAlign: "center" }}>
         <div style={{ fontSize: 44, marginBottom: 12 }}>
-          <img src={logo} alt="Logo" style={{ width: "50px", height: "50px" }} />
+          <img src={logo} alt="Logo" style={{ width: "100px", height: "100px" }} />
         </div>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-1)", letterSpacing: "-0.4px", margin: "0 0 6px" }}>
           Inventorizacija

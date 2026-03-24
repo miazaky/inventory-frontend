@@ -36,7 +36,7 @@ export default function App() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [current, setCurrent] = useState<Page>("dashboard");
-  const logo = "/wirepro.png"
+  const logo = "/MK_juodas_mini_permatomas.png"
 
   useEffect(() => {
     // Check if we're returning from a Microsoft login redirect

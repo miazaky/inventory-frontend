@@ -2,12 +2,16 @@ import { useEffect, useState, Fragment, type CSSProperties } from "react";
 import { ordersApi } from "../api/orders";
 import { productsApi } from "../api/products";
 import { warehousesApi } from "../api/warehouses";
+import { warehouseInventoryApi } from "../api/warehouseInventory";
 import type { Order, Product } from "../types";
 import { OrderType } from "../types";
 import { Badge } from "../components/Badge";
+import { LowStockModal } from "../components/LowStockModal";
 
-type StatusFilter   = "all" | "pending" | "completed";
+type StatusFilter = "all" | "working" | "reserved" | "completed";
 type ProposalFilter = "all" | "special" | "noSpecial";
+// Local reservation progress state
+type ReserveState = "idle" | "working" | "reserved" | "completed";
 
 export function AllOrdersPage() {
   const [orders, setOrders]       = useState<Order[]>([]);
@@ -18,8 +22,9 @@ export function AllOrdersPage() {
   const [search, setSearch]       = useState("");
   const [statusFilter, setStatusFilter]   = useState<StatusFilter>("all");
   const [proposalFilter, setProposalFilter] = useState<ProposalFilter>("all");
-  const [reservingId, setReservingId] = useState<string | null>(null);
+  const [reserveStates, setReserveStates] = useState<Record<string, ReserveState>>({});
   const [reserveError, setReserveError] = useState<string | null>(null);
+  const [modalOrder, setModalOrder] = useState<Order | null>(null);
 
   useEffect(() => {
     Promise.all([ordersApi.getAll(), productsApi.getAll(), warehousesApi.getAll()])
@@ -30,6 +35,9 @@ export function AllOrdersPage() {
 
   const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
 
+  const setOrderReserveState = (orderId: string, state: ReserveState) =>
+    setReserveStates((prev) => ({ ...prev, [orderId]: state }));
+
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -38,27 +46,73 @@ export function AllOrdersPage() {
     });
   };
 
-  const handleReserve = async (order: Order, e: React.MouseEvent) => {
+  // Called when user clicks "Rezervuoti" — check stock first
+  const handleReserveClick = async (order: Order, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm(`Rezervuoti medžiagas užsakymui #${order.id.slice(0, 8)}…? Bus sumažinti sandėlio kiekiai.`)) return;
-    setReservingId(order.id);
+    setReserveError(null);
+
+    try {
+      const lowStock = await warehouseInventoryApi.getLowStock();
+      const orderProductIds = new Set((order.items ?? []).map((i) => i.productId));
+
+      // Check if any order item appears in low-stock AND doesn't have enough qty
+      const problematic = lowStock.filter((inv) => {
+        if (!orderProductIds.has(inv.productId)) return false;
+        const required = order.items?.find((i) => i.productId === inv.productId)?.quantity ?? 0;
+        return inv.quantityCurrent < required;
+      });
+
+      if (problematic.length > 0) {
+        // Stock issues → show modal so user can see what's wrong
+        setModalOrder(order);
+      } else {
+        // All stock sufficient → reserve immediately, no modal
+        await doReserve(order);
+      }
+    } catch {
+      // If the stock check itself fails, fall back to showing the modal
+      setModalOrder(order);
+    }
+  };
+
+  // The actual reserve API call
+  const doReserve = async (order: Order) => {
+    setOrderReserveState(order.id, "working");
     setReserveError(null);
     try {
       await ordersApi.reserve(order.id);
-      setOrders((prev) => prev.map((o) =>
-        o.id === order.id ? { ...o, status: "COMPLETED" } : o
-      ));
+      setOrderReserveState(order.id, "reserved");
     } catch {
       setReserveError("Nepavyko rezervuoti medžiagų. Bandykite dar kartą.");
-    } finally {
-      setReservingId(null);
+      setOrderReserveState(order.id, "idle");
     }
   };
+
+  // User confirmed in the modal (stock issues acknowledged)
+  const handleModalConfirm = async () => {
+    if (!modalOrder) return;
+    const order = modalOrder;
+    setModalOrder(null);
+    await doReserve(order);
+  };
+
+  // "Užbaigti" — second click after reserved
+  const handleComplete = (order: Order, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOrderReserveState(order.id, "completed");
+    setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: "COMPLETED" } : o)));
+  };
+
+  const handleSendProposal = (order: Order, e: React.MouseEvent) => {
+    e.stopPropagation();
+    window.alert(`Pasiūlymas išsiųstas klientui ${order.user?.email ?? order.id.slice(0, 8)}`);
+  };
+
   const statusVariant = (status: string | null): "green" | "yellow" | "blue" | "gray" => {
     if (!status) return "gray";
     const s = status.toLowerCase();
     if (s.includes("complete")) return "green";
-    if (s.includes("pend")) return "yellow";
+    if (s.includes("pend"))    return "yellow";
     return "blue";
   };
 
@@ -66,32 +120,31 @@ export function AllOrdersPage() {
     if (!status) return "Nežinoma";
     const s = status.toLowerCase();
     if (s.includes("complete")) return "Užbaigtas";
-    if (s.includes("pend")) return "Laukiami";
+    if (s.includes("pend"))    return "Laukiami";
     return status;
   };
 
   const proposalLabel = (orderType: OrderType | null) => {
-    if (orderType === OrderType.SpecialOffer)   return "Specialus";
+    if (orderType === OrderType.SpecialOffer)   return "Nori pasiūlymo";
     if (orderType === OrderType.NoSpecialOffer) return "Standartinis";
     return "—";
   };
 
-  const proposalVariant = (orderType: OrderType | null): "blue" | "gray" => {
-    if (orderType === OrderType.SpecialOffer) return "blue";
-    return "gray";
-  };
+  const proposalVariant = (orderType: OrderType | null): "blue" | "gray" =>
+    orderType === OrderType.SpecialOffer ? "blue" : "gray";
+
   const filtered = orders.filter((o) => {
     const s = o.status?.toLowerCase() ?? "";
+    const rs = reserveStates[o.id] ?? "idle";
     const matchStatus =
       statusFilter === "all" ||
-      (statusFilter === "pending"   && s.includes("pend")) ||
-      (statusFilter === "completed" && s.includes("complete"));
-
+      (statusFilter === "working"   && rs === "working") ||
+      (statusFilter === "reserved"  && rs === "reserved") ||
+      (statusFilter === "completed" && (s.includes("complete") || rs === "completed"));
     const matchProposal =
       proposalFilter === "all" ||
       (proposalFilter === "special"   && o.orderType === OrderType.SpecialOffer) ||
       (proposalFilter === "noSpecial" && (o.orderType === OrderType.NoSpecialOffer || o.orderType == null));
-
     const q = search.toLowerCase();
     const matchSearch =
       !q ||
@@ -100,7 +153,6 @@ export function AllOrdersPage() {
       o.user?.email?.toLowerCase().includes(q) ||
       o.user?.companyCode?.toLowerCase().includes(q) ||
       o.user?.phone?.toLowerCase().includes(q);
-
     return matchStatus && matchProposal && matchSearch;
   });
 
@@ -117,10 +169,10 @@ export function AllOrdersPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
-        <SummaryCard label="Visi užsakymai"   value={orders.length}  color="var(--brand)" />
-        <SummaryCard label="Laukiami"         value={pendingCount}   color="#d97706" />
-        <SummaryCard label="Užbaigti"         value={completedCount} color="var(--success)" />
-        <SummaryCard label="Specialūs pasiūlymai" value={specialCount} color="#6366f1" />
+        <SummaryCard label="Visi užsakymai" value={orders.length}  color="var(--brand)" />
+        <SummaryCard label="Laukiami"       value={pendingCount}   color="#d97706" />
+        <SummaryCard label="Užbaigti"       value={completedCount} color="var(--success)" />
+        <SummaryCard label="Nori pasiūlymo" value={specialCount}   color="#6366f1" />
       </div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
@@ -132,10 +184,15 @@ export function AllOrdersPage() {
           style={{ flex: 1, maxWidth: 300 }}
         />
         <div style={{ display: "flex", gap: 6 }}>
-          {(["all", "pending", "completed"] as StatusFilter[]).map((f) => (
-            <button key={f} onClick={() => setStatusFilter(f)}
-              className={`btn btn-sm ${statusFilter === f ? "btn-primary" : "btn-secondary"}`}>
-              {f === "all" ? "Visi" : f === "pending" ? "Laukiami" : "Užbaigti"}
+          {([
+            { key: "all",      label: "Visi" },
+            { key: "working",  label: "Vykdomi" },
+            { key: "reserved", label: "Rezervuoti" },
+            { key: "completed",label: "Užbaigti" },
+          ] as { key: StatusFilter; label: string }[]).map(({ key, label }) => (
+            <button key={key} onClick={() => setStatusFilter(key)}
+              className={`btn btn-sm ${statusFilter === key ? "btn-primary" : "btn-secondary"}`}>
+              {label}
             </button>
           ))}
         </div>
@@ -143,17 +200,16 @@ export function AllOrdersPage() {
           {(["all", "special", "noSpecial"] as ProposalFilter[]).map((f) => (
             <button key={f} onClick={() => setProposalFilter(f)}
               className={`btn btn-sm ${proposalFilter === f ? "btn-primary" : "btn-secondary"}`}>
-              {f === "all" ? "Visi pasiūlymai" : f === "special" ? "Specialūs" : "Standartiniai"}
+              {f === "all" ? "Visi pasiūlymai" : f === "special" ? "Nori pasiūlymo" : "Standartiniai"}
             </button>
           ))}
         </div>
-
         <span style={{ fontSize: 12, color: "var(--text-3)", marginLeft: "auto" }}>
           {filtered.length} iš {orders.length}
         </span>
       </div>
 
-      {error      && <div className="alert alert-error"   style={{ marginBottom: 14 }}>⚠ {error}</div>}
+      {error        && <div className="alert alert-error" style={{ marginBottom: 14 }}>⚠ {error}</div>}
       {reserveError && <div className="alert alert-error" style={{ marginBottom: 14 }}>⚠ {reserveError}</div>}
 
       {loading ? (
@@ -171,14 +227,14 @@ export function AllOrdersPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: 40 }} />
-              <col style={{ width: 100 }} />
-              <col style={{ width: 170 }} />
-              <col style={{ width: 170 }} />
-              <col style={{ width: 100 }} />
-              <col style={{ width: 120 }} />
-              <col style={{ width: 55 }} />
-              <col style={{ width: 85 }} />
-              <col style={{ width: 110 }} />
+              <col style={{ width: 95 }} />
+              <col style={{ width: 155 }} />
+              <col style={{ width: 155 }} />
+              <col style={{ width: 95 }} />
+              <col style={{ width: 115 }} />
+              <col style={{ width: 50 }} />
+              <col style={{ width: 120 }} /> 
+              <col style={{ width: 125 }} /> 
             </colgroup>
             <thead>
               <tr style={{ background: "var(--surface-2)", borderBottom: "2px solid var(--border)" }}>
@@ -189,15 +245,21 @@ export function AllOrdersPage() {
                 <th style={th()}>Statusas</th>
                 <th style={th()}>Pasiūlymas</th>
                 <th style={th("center")}>Prekės</th>
-                <th style={th("right")}>Suma</th>
-                <th style={th("center")}>Veiksmai</th>
+                <th style={th("center")}>Veiksmas</th>
+                <th style={th("center")}>Pasiūlymas</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((order) => {
-                const expanded  = expandedIds.has(order.id);
-                const itemCount = order.items?.length ?? 0;
+                const expanded    = expandedIds.has(order.id);
+                const itemCount   = order.items?.length ?? 0;
                 const isCompleted = order.status?.toLowerCase().includes("complete");
+                const isSpecial   = order.orderType === OrderType.SpecialOffer;
+                const isStandard  = !isSpecial;
+                const reserveState = reserveStates[order.id] ?? "idle";
+                const isWorking   = reserveState === "working";
+                const isReserved  = reserveState === "reserved";
+
                 const total = order.items?.reduce((sum, item) => {
                   const price = productMap[item.productId]?.price ?? 0;
                   return sum + price * item.quantity;
@@ -214,6 +276,7 @@ export function AllOrdersPage() {
                       }}
                       className="order-row"
                     >
+                      {/* Expand toggle */}
                       <td style={{ ...td(), textAlign: "center" }}>
                         <span style={{
                           display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -225,6 +288,8 @@ export function AllOrdersPage() {
                           {expanded ? "▾" : "▸"}
                         </span>
                       </td>
+
+                      {/* Date */}
                       <td style={td()}>
                         <span style={{ color: "var(--text-2)", fontSize: 12 }}>
                           {order.createdDate
@@ -232,6 +297,8 @@ export function AllOrdersPage() {
                             : "—"}
                         </span>
                       </td>
+
+                      {/* Customer */}
                       <td style={td()}>
                         <div style={{ fontWeight: 600, color: "var(--text-1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {order.user?.name || <span style={{ color: "var(--text-3)" }}>—</span>}
@@ -240,49 +307,72 @@ export function AllOrdersPage() {
                           <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>{order.user.companyCode}</div>
                         )}
                       </td>
+
+                      {/* Email / Phone */}
                       <td style={td()}>
                         <div style={{ color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{order.user?.email || "—"}</div>
                         {order.user?.phone && (
                           <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>{order.user.phone}</div>
                         )}
                       </td>
+
+                      {/* Status badge */}
                       <td style={td()}>
                         <Badge variant={statusVariant(order.status)}>{statusLabel(order.status)}</Badge>
                       </td>
+
+                      {/* Proposal type */}
                       <td style={td()}>
-                        <Badge variant={proposalVariant(order.orderType)}>
-                          {proposalLabel(order.orderType)}
-                        </Badge>
+                        <Badge variant={proposalVariant(order.orderType)}>{proposalLabel(order.orderType)}</Badge>
                       </td>
+
                       <td style={{ ...td(), textAlign: "center" }}>
                         <span style={{ display: "inline-block", minWidth: 24, padding: "2px 8px", background: "var(--surface-2)", borderRadius: 99, fontWeight: 700, fontSize: 12 }}>
                           {itemCount}
                         </span>
                       </td>
-                      <td style={{ ...td(), textAlign: "right", fontWeight: 700, color: total > 0 ? "var(--text-1)" : "var(--text-3)" }}>
-                        {total > 0 ? `${total.toFixed(2)} €` : "—"}
-                      </td>
+
                       <td style={{ ...td(), textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
-                        {isCompleted ? (
-                          <span style={{ fontSize: 11, color: "var(--success)", fontWeight: 600 }}>✓ Rezervuota</span>
+                        {isStandard ? (
+                          <span style={{ fontSize: 11, color: "var(--text-3)" }}>—</span>
+                        ) : isCompleted || reserveState === "completed" ? (
+                          <span style={{ fontSize: 11, color: "var(--success)", fontWeight: 600 }}>✓ Atlikta</span>
+                        ) : isReserved ? (
+                          <button
+                            className="btn btn-sm"
+                            style={{ background: "#16a34a", color: "#fff", border: "none", padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                            onClick={(e) => handleComplete(order, e)}
+                          >
+                            Užbaigti
+                          </button>
                         ) : (
                           <button
                             className="btn btn-sm"
-                            style={{
-                              background: "#6366f1", color: "#fff", border: "none",
-                              padding: "4px 10px", borderRadius: 6, fontSize: 11,
-                              fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
-                              opacity: reservingId === order.id ? 0.6 : 1,
-                            }}
-                            disabled={reservingId === order.id}
-                            onClick={(e) => handleReserve(order, e)}
+                            style={{ background: "#6366f1", color: "#fff", border: "none", padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", opacity: isWorking ? 0.6 : 1 }}
+                            disabled={isWorking}
+                            onClick={(e) => handleReserveClick(order, e)}
                           >
-                            {reservingId === order.id ? "…" : "Rezervuoti"}
+                            {isWorking ? "…" : "Rezervuoti"}
                           </button>
+                        )}
+                      </td>
+
+                      <td style={{ ...td(), textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                        {isSpecial ? (
+                          <button
+                            className="btn btn-sm"
+                            style={{ background: "#0ea5e9", color: "#fff", border: "none", padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                            onClick={(e) => handleSendProposal(order, e)}
+                          >
+                            Siųsti pasiūlymą
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 11, color: "var(--text-3)" }}>—</span>
                         )}
                       </td>
                     </tr>
 
+                    {/* Expanded items sub-table */}
                     {expanded && (
                       <tr style={{ borderBottom: "1px solid var(--border)" }}>
                         <td colSpan={9} style={{ padding: 0, background: "#f5f7ff", textAlign: "left" }}>
@@ -292,19 +382,13 @@ export function AllOrdersPage() {
                             ) : (
                               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
                                 <colgroup>
-                                  <col style={{ width: 300 }} />
-                                  <col style={{ width: 200 }} />
-                                  <col style={{ width: 110 }} />
-                                  <col style={{ width: 60 }} />
-                                  <col style={{ width: 90 }} />
+                                  <col style={{ width: 300 }} /><col style={{ width: 200 }} />
+                                  <col style={{ width: 110 }} /><col style={{ width: 60 }} /><col style={{ width: 90 }} />
                                 </colgroup>
                                 <thead>
                                   <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                                    <th style={th()}>Produktas</th>
-                                    <th style={th()}>Kodas</th>
-                                    <th style={th("center")}>Kiekis</th>
-                                    <th style={th("right")}>Vnt. kaina</th>
-                                    <th style={th("right")}>Suma</th>
+                                    <th style={th()}>Produktas</th><th style={th()}>Kodas</th>
+                                    <th style={th("center")}>Kiekis</th><th style={th("right")}>Vnt. kaina</th><th style={th("right")}>Suma</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -342,17 +426,26 @@ export function AllOrdersPage() {
         </div>
       )}
 
+      {modalOrder && (
+        <LowStockModal
+          order={modalOrder}
+          productMap={productMap}
+          onConfirm={handleModalConfirm}
+          onCancel={() => setModalOrder(null)}
+        />
+      )}
+
       <style>{`.order-row:hover { background: var(--surface-2) !important; }`}</style>
     </div>
   );
 }
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
 function SummaryCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="card" style={{ padding: "16px 20px", marginTop: 16, minHeight: 80, boxSizing: "border-box" }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-        {label}
-      </div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 800, color }}>{value}</div>
     </div>
   );

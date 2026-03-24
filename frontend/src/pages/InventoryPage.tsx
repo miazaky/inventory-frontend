@@ -55,13 +55,20 @@ function InventoryRow({
     setEditing(false);
   };
 
-  const productName = productMap[item.productId]?.name || item.productId.slice(0, 8) + "…";
+  const product = productMap[item.productId];
+  const productName = product?.name || item.productId.slice(0, 8) + "…";
+  const productSku  = product?.sku  || "—";
   const warehouseName = warehouseMap[item.warehouseId]?.name || item.warehouseId.slice(0, 8) + "…";
 
   if (editing) {
     return (
       <>
         <tr className="row-editing">
+          <td>
+            <span style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-2)" }}>
+              {productSku}
+            </span>
+          </td>
           <td><span style={{ fontWeight: 500 }}>{productName}</span></td>
           <td>{warehouseName}</td>
           <td>
@@ -89,7 +96,7 @@ function InventoryRow({
         </tr>
         {error && (
           <tr>
-            <td colSpan={5}>
+            <td colSpan={6}>
               <div className="alert alert-error" style={{ margin: "4px 0", padding: "6px 10px", fontSize: 12 }}>⚠ {error}</div>
             </td>
           </tr>
@@ -100,6 +107,11 @@ function InventoryRow({
 
   return (
     <tr>
+      <td>
+        <span style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-2)" }}>
+          {productSku}
+        </span>
+      </td>
       <td><span style={{ fontWeight: 500 }}>{productName}</span></td>
       <td>{warehouseName}</td>
       <td><span style={{ fontWeight: 600 }}>{item.quantityCurrent}</span></td>
@@ -183,6 +195,7 @@ export function InventoryPage() {
     const q = search.toLowerCase();
     return (
       product?.name?.toLowerCase().includes(q) ||
+      product?.sku?.toLowerCase().includes(q) ||
       warehouse?.name?.toLowerCase().includes(q) ||
       item.quantityCurrent.toString().includes(q)
     );
@@ -197,11 +210,11 @@ export function InventoryPage() {
         <div className="page-header-actions">
           <input
             type="text"
-            placeholder="Ieškoti pagal produktą ar sandėlį..."
+            placeholder="Ieškoti pagal kodą, produktą ar sandėlį..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input"
-            style={{ width: 260 }}
+            style={{ width: 280 }}
           />
           <button onClick={() => setShowAdd(true)} className="btn btn-primary">+ Pridėti naują įrašą</button>
         </div>
@@ -213,6 +226,7 @@ export function InventoryPage() {
         <table>
           <thead>
             <tr>
+              <th>Kodas</th>
               <th>Pavadinimas</th>
               <th>Sandėlis</th>
               <th>Kiekis</th>
@@ -222,9 +236,9 @@ export function InventoryPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={5} className="td-loading">Kraunama...</td></tr>
+              <tr><td colSpan={6} className="td-loading">Kraunama...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={5} className="td-empty">Inventoriaus įrašų nerasta.</td></tr>
+              <tr><td colSpan={6} className="td-empty">Inventoriaus įrašų nerasta.</td></tr>
             ) : (
               filtered.map((item) => (
                 <InventoryRow

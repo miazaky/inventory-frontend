@@ -25,6 +25,7 @@ export function AllOrdersPage() {
   const [reserveStates, setReserveStates] = useState<Record<string, ReserveState>>({});
   const [reserveError, setReserveError] = useState<string | null>(null);
   const [modalOrder, setModalOrder] = useState<Order | null>(null);
+  const [pdfLoading, setPdfLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     Promise.all([ordersApi.getAll(), productsApi.getAll(), warehousesApi.getAll()])
@@ -106,6 +107,20 @@ export function AllOrdersPage() {
   const handleSendProposal = (order: Order, e: React.MouseEvent) => {
     e.stopPropagation();
     window.alert(`Pasiūlymas išsiųstas klientui ${order.user?.email ?? order.id.slice(0, 8)}`);
+  };
+
+  const handleDownloadPdf = async (order: Order, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPdfLoading((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      const { url } = await ordersApi.getPdfUrl(order.id);
+      // Open SAS URL in a new tab — browser will prompt download for PDFs
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      alert("Nepavyko gauti PDF nuorodos. Bandykite dar kartą.");
+    } finally {
+      setPdfLoading((prev) => ({ ...prev, [order.id]: false }));
+    }
   };
 
   const statusVariant = (status: string | null): "green" | "yellow" | "blue" | "gray" => {
@@ -234,7 +249,8 @@ export function AllOrdersPage() {
               <col style={{ width: 115 }} />
               <col style={{ width: 50 }} />
               <col style={{ width: 120 }} /> 
-              <col style={{ width: 125 }} /> 
+              <col style={{ width: 125 }} />
+              <col style={{ width: 110 }} />
             </colgroup>
             <thead>
               <tr style={{ background: "var(--surface-2)", borderBottom: "2px solid var(--border)" }}>
@@ -247,6 +263,7 @@ export function AllOrdersPage() {
                 <th style={th("center")}>Prekės</th>
                 <th style={th("center")}>Veiksmas</th>
                 <th style={th("center")}>Pasiūlymas</th>
+                <th style={th("center")}>PDF</th>
               </tr>
             </thead>
             <tbody>
@@ -370,12 +387,34 @@ export function AllOrdersPage() {
                           <span style={{ fontSize: 11, color: "var(--text-3)" }}>—</span>
                         )}
                       </td>
+
+                      {/* PDF download cell */}
+                      <td style={{ ...td(), textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                        {order.pdfUrl ? (
+                          <button
+                            className="btn btn-sm"
+                            style={{
+                              background: pdfLoading[order.id] ? "#94a3b8" : "#16a34a",
+                              color: "#fff", border: "none", padding: "4px 10px",
+                              borderRadius: 6, fontSize: 11, fontWeight: 600,
+                              cursor: pdfLoading[order.id] ? "default" : "pointer",
+                              whiteSpace: "nowrap",
+                            }}
+                            disabled={pdfLoading[order.id]}
+                            onClick={(e) => handleDownloadPdf(order, e)}
+                          >
+                            {pdfLoading[order.id] ? "…" : "⬇ PDF"}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 11, color: "var(--text-3)" }}>—</span>
+                        )}
+                      </td>
                     </tr>
 
                     {/* Expanded items sub-table */}
                     {expanded && (
                       <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                        <td colSpan={9} style={{ padding: 0, background: "#f5f7ff", textAlign: "left" }}>
+                        <td colSpan={10} style={{ padding: 0, background: "#f5f7ff", textAlign: "left" }}>
                           <div style={{ paddingLeft: 40 }}>
                             {!itemCount ? (
                               <div style={{ padding: "12px 16px", color: "var(--text-3)", fontStyle: "italic", fontSize: 13 }}>Nėra prekių</div>

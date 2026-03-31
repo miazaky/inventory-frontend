@@ -23,4 +23,8 @@ export const ordersApi = {
 
   reserve: (id: string) =>
     apiFetch<void>(`/api/Orders/${id}/complete`, { method: "POST" }), //after change to reserve endpoint, update this to `/api/Orders/${id}/reserve`
+
+  /** Returns a 15-minute SAS download URL for the order's stored PDF. */
+  getPdfUrl: (id: string) =>
+    apiFetch<{ url: string }>(`/api/Orders/${id}/pdf-url`),
 };

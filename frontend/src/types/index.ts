@@ -121,6 +121,7 @@ export interface Order {
   status: string | null;
   createdDate: string;
   orderType: OrderType | null;
+  pdfUrl: string | null;
   user: User | null;
   items: OrderItem[] | null;
 }

@@ -46,11 +46,12 @@ function ProductRow({
     setError(null);
     try {
       const cmd: UpdateProductCommand = {
-        id:     product.id,
-        sku:    form.sku    || undefined,
-        name:   form.name,
-        length: form.length ? Number(form.length) : undefined,
-        price:  form.price  ? Number(form.price)  : undefined,
+        id:             product.id,
+        sku:            form.sku    || undefined,
+        name:           form.name,
+        length:         form.length ? Number(form.length) : undefined,
+        price:          form.price  ? Number(form.price)  : undefined,
+        systemCategory: product.systemCategory, // preserve existing category
       };
       await productsApi.update(product.id, cmd);
 

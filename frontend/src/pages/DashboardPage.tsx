@@ -5,14 +5,15 @@ import { warehousesApi } from "../api/warehouses";
 import { ordersApi } from "../api/orders";
 import { Badge } from "../components/Badge";
 import type { WarehouseInventory, Product, Warehouse, Order } from "../types";
+import { SystemCategory, SYSTEM_CATEGORY_LABELS } from "../types";
 
 export function DashboardPage() {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts]     = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [lowStock, setLowStock] = useState<WarehouseInventory[]>([]);
+  const [lowStock, setLowStock]     = useState<WarehouseInventory[]>([]);
   const [pendingOrders, setPendingOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -36,11 +37,26 @@ export function DashboardPage() {
     load();
   }, []);
 
-  const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
-  const warehouseMap = Object.fromEntries(warehouses.map((w) => [w.id, w]));
+  const productMap    = Object.fromEntries(products.map((p) => [p.id, p]));
+  const warehouseMap  = Object.fromEntries(warehouses.map((w) => [w.id, w]));
+
+  // Group products by category
+  const SHOWN_CATEGORIES = [
+    { cat: SystemCategory.Ground,     icon: "🌱", color: "#16a34a" },
+    { cat: SystemCategory.FlatRoof,   icon: "🏢", color: "#2563eb" },
+    { cat: SystemCategory.SlopedRoof, icon: "🏠", color: "#9333ea" },
+    { cat: SystemCategory.RoofShared, icon: "🔗", color: "#0891b2" },
+    { cat: SystemCategory.Shared,     icon: "⚙️", color: "#64748b" },
+  ];
+
+  const byCategory = SHOWN_CATEGORIES.map(({ cat, icon, color }) => ({
+    cat, icon, color,
+    catLabel: SYSTEM_CATEGORY_LABELS[cat],
+    count: products.filter((p) => p.systemCategory === cat).length,
+  }));
 
   if (loading)
-    return <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:240, color:"var(--text-3)" }}>Kraunama...</div>;
+    return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 240, color: "var(--text-3)" }}>Kraunama...</div>;
   if (error)
     return <div className="page"><div className="alert alert-error">⚠ {error}</div></div>;
 
@@ -53,7 +69,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Top stats */}
       <div className="stat-grid">
         <div className="stat-card">
           <div className="stat-icon c-indigo">📦</div>
@@ -66,7 +82,7 @@ export function DashboardPage() {
           <div className="stat-icon c-teal">🕐</div>
           <div>
             <div className="stat-value">{pendingOrders.length}</div>
-            <div className="stat-label">Užsakymai</div>
+            <div className="stat-label">Laukiami užsakymai</div>
           </div>
         </div>
         <div className="stat-card">
@@ -78,43 +94,91 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Low stock table */}
+      {/* Materials by category */}
       <div className="card" style={{ marginBottom: 16 }}>
-        {/* <div className="card-header">
+        <div className="card-header">
+          <span className="card-title">Medžiagos pagal sistemą</span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 0 }}>
+          {byCategory.map(({ cat, icon, color, catLabel, count }, i) => (
+            <div
+              key={cat}
+              style={{
+                padding: "20px 18px",
+                borderRight: i < byCategory.length - 1 ? "1px solid var(--border)" : "none",
+                display: "flex", flexDirection: "column", gap: 6,
+              }}
+            >
+              <div style={{ fontSize: 20 }}>{icon}</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color }}>{count}</div>
+              <div style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 600, lineHeight: 1.3 }}>{catLabel}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Low stock grouped by category */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-header">
           <span className="card-title">Mažo kiekio medžiagos</span>
           {lowStock.length > 0 && <Badge variant="red">{lowStock.length} įspėjimai</Badge>}
-        </div> */}
+        </div>
         {lowStock.length === 0 ? (
           <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-3)" }}>
             ✅ Visi kiekiai yra normalūs
           </div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Produktas</th>
-                <th>Sandėlis</th>
-                <th>Kiekis</th>
-                <th>Min</th>
-                <th>Statusas</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lowStock.map((item) => (
-                <tr key={item.id}>
-                  <td style={{ fontWeight: 500 }}>{productMap[item.productId]?.name || item.productId.slice(0, 8) + "…"}</td>
-                  <td style={{ color: "var(--text-2)" }}>{warehouseMap[item.warehouseId]?.name || item.warehouseId.slice(0, 8) + "…"}</td>
-                  <td style={{ fontWeight: 600, color: "var(--danger)" }}>{item.quantityCurrent}</td>
-                  <td>{item.quantityMin}</td>
-                  <td><Badge variant="red">Mažas kiekis</Badge></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            {/* Group low stock by product category */}
+            {SHOWN_CATEGORIES.map(({ cat, icon, color }) => {
+              const items = lowStock.filter((inv) => productMap[inv.productId]?.systemCategory === cat);
+              if (items.length === 0) return null;
+              return (
+                <div key={cat}>
+                  <div style={{
+                    padding: "8px 16px", background: "var(--surface-2)",
+                    borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
+                    fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.05em",
+                    display: "flex", alignItems: "center", gap: 6,
+                  }}>
+                    {icon} {SYSTEM_CATEGORY_LABELS[cat]}
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <tbody>
+                      {items.map((item) => (
+                        <tr key={item.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                          <td style={{ padding: "10px 16px", fontWeight: 500 }}>
+                            {productMap[item.productId]?.name || item.productId.slice(0, 8) + "…"}
+                          </td>
+                          <td style={{ padding: "10px 16px", color: "var(--text-2)", fontSize: 12 }}>
+                            <span style={{ fontFamily: "monospace", background: "var(--surface-2)", padding: "2px 6px", borderRadius: 4 }}>
+                              {productMap[item.productId]?.sku || "—"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "10px 16px", color: "var(--text-2)" }}>
+                            {warehouseMap[item.warehouseId]?.name || item.warehouseId.slice(0, 8) + "…"}
+                          </td>
+                          <td style={{ padding: "10px 16px", fontWeight: 600, color: "var(--danger)" }}>
+                            {item.quantityCurrent}
+                          </td>
+                          <td style={{ padding: "10px 16px", color: "var(--text-3)" }}>
+                            min: {item.quantityMin}
+                          </td>
+                          <td style={{ padding: "10px 16px" }}>
+                            <Badge variant="red">Mažas kiekis</Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </>
         )}
       </div>
 
-      {/* Pending orders list */}
+      {/* Pending orders */}
       <div className="card">
         <div className="card-header">
           <span className="card-title">Laukiami užsakymai</span>

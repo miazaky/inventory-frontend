@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment, type CSSProperties } from "react";
+import { useEffect, useState, Fragment, useRef, type CSSProperties } from "react";
 import { ordersApi } from "../api/orders";
 import { productsApi } from "../api/products";
 import { warehousesApi } from "../api/warehouses";
@@ -8,9 +8,8 @@ import { OrderType } from "../types";
 import { Badge } from "../components/Badge";
 import { LowStockModal } from "../components/LowStockModal";
 
-type StatusFilter = "all" | "working" | "reserved" | "completed";
+type StatusFilter = "all" | "working" | "reserved" | "paused" | "completed";
 type ProposalFilter = "all" | "special" | "noSpecial";
-// Local reservation progress state
 type ReserveState = "idle" | "working" | "reserved" | "completed";
 
 export function AllOrdersPage() {
@@ -26,12 +25,25 @@ export function AllOrdersPage() {
   const [reserveError, setReserveError] = useState<string | null>(null);
   const [modalOrder, setModalOrder] = useState<Order | null>(null);
   const [pdfLoading, setPdfLoading] = useState<Record<string, boolean>>({});
+  const [openMenu, setOpenMenu]   = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     Promise.all([ordersApi.getAll(), productsApi.getAll(), warehousesApi.getAll()])
       .then(([o, p]) => { setOrders(o || []); setProducts(p || []); })
       .catch(() => setError("Nepavyko įkelti užsakymų"))
       .finally(() => setLoading(false));
+  }, []);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, []);
 
   const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
@@ -47,49 +59,63 @@ export function AllOrdersPage() {
     });
   };
 
-  // Called when user clicks "Rezervuoti" — check stock first
   const handleReserveClick = async (order: Order, e: React.MouseEvent) => {
     e.stopPropagation();
+    setOpenMenu(null);
     setReserveError(null);
-
     try {
       const lowStock = await warehouseInventoryApi.getLowStock();
       const orderProductIds = new Set((order.items ?? []).map((i) => i.productId));
-
-      // Check if any order item appears in low-stock AND doesn't have enough qty
       const problematic = lowStock.filter((inv) => {
         if (!orderProductIds.has(inv.productId)) return false;
         const required = order.items?.find((i) => i.productId === inv.productId)?.quantity ?? 0;
         return inv.quantityCurrent < required;
       });
-
       if (problematic.length > 0) {
-        // Stock issues → show modal so user can see what's wrong
         setModalOrder(order);
       } else {
-        // All stock sufficient → reserve immediately, no modal
         await doReserve(order);
       }
     } catch {
-      // If the stock check itself fails, fall back to showing the modal
       setModalOrder(order);
     }
   };
 
-  // The actual reserve API call
   const doReserve = async (order: Order) => {
     setOrderReserveState(order.id, "working");
     setReserveError(null);
     try {
       await ordersApi.reserve(order.id);
       setOrderReserveState(order.id, "reserved");
+      setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: "RESERVED" } : o));
     } catch {
       setReserveError("Nepavyko rezervuoti medžiagų. Bandykite dar kartą.");
       setOrderReserveState(order.id, "idle");
     }
   };
 
-  // User confirmed in the modal (stock issues acknowledged)
+  const handlePause = async (order: Order, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpenMenu(null);
+    try {
+      await ordersApi.pause(order.id);
+      setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: "PAUSED" } : o));
+    } catch {
+      setReserveError("Nepavyko sustabdyti užsakymo.");
+    }
+  };
+
+  const handleResume = async (order: Order, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpenMenu(null);
+    try {
+      await ordersApi.resume(order.id);
+      setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: "RESERVED" } : o));
+    } catch {
+      setReserveError("Nepavyko pratęsti užsakymo.");
+    }
+  };
+
   const handleModalConfirm = async () => {
     if (!modalOrder) return;
     const order = modalOrder;
@@ -97,24 +123,31 @@ export function AllOrdersPage() {
     await doReserve(order);
   };
 
-  // "Užbaigti" — second click after reserved
-  const handleComplete = (order: Order, e: React.MouseEvent) => {
+  const handleComplete = async (order: Order, e: React.MouseEvent) => {
     e.stopPropagation();
-    setOrderReserveState(order.id, "completed");
-    setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: "COMPLETED" } : o)));
+    setOpenMenu(null);
+    try {
+      await ordersApi.complete(order.id);
+      setOrderReserveState(order.id, "completed");
+      setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: "COMPLETED" } : o));
+    } catch {
+      setReserveError("Nepavyko užbaigti užsakymo.");
+    }
   };
 
   const handleSendProposal = (order: Order, e: React.MouseEvent) => {
     e.stopPropagation();
-    window.alert(`Pasiūlymas išsiųstas klientui ${order.user?.email ?? order.id.slice(0, 8)}`);
+    setOpenMenu(null);
+    // TODO: implement send proposal
+    alert(`Siųsti pasiūlymą: ${order.user?.email ?? order.id.slice(0, 8)}`);
   };
 
   const handleDownloadPdf = async (order: Order, e: React.MouseEvent) => {
     e.stopPropagation();
+    setOpenMenu(null);
     setPdfLoading((prev) => ({ ...prev, [order.id]: true }));
     try {
       const { url } = await ordersApi.getPdfUrl(order.id);
-      // Open SAS URL in a new tab — browser will prompt download for PDFs
       window.open(url, "_blank", "noopener,noreferrer");
     } catch {
       alert("Nepavyko gauti PDF nuorodos. Bandykite dar kartą.");
@@ -127,7 +160,9 @@ export function AllOrdersPage() {
     if (!status) return "gray";
     const s = status.toLowerCase();
     if (s.includes("complete")) return "green";
-    if (s.includes("pend"))    return "yellow";
+    if (s.includes("reserved")) return "blue";
+    if (s.includes("pend"))     return "yellow";
+    if (s.includes("pause"))    return "gray";
     return "blue";
   };
 
@@ -135,7 +170,9 @@ export function AllOrdersPage() {
     if (!status) return "Nežinoma";
     const s = status.toLowerCase();
     if (s.includes("complete")) return "Užbaigtas";
-    if (s.includes("pend"))    return "Laukiami";
+    if (s.includes("reserved")) return "Rezervuotas";
+    if (s.includes("pend"))     return "Laukiama";
+    if (s.includes("pause"))    return "Sustabdytas";
     return status;
   };
 
@@ -149,12 +186,13 @@ export function AllOrdersPage() {
     orderType === OrderType.SpecialOffer ? "blue" : "gray";
 
   const filtered = orders.filter((o) => {
-    const s = o.status?.toLowerCase() ?? "";
+    const s  = o.status?.toLowerCase() ?? "";
     const rs = reserveStates[o.id] ?? "idle";
     const matchStatus =
       statusFilter === "all" ||
       (statusFilter === "working"   && rs === "working") ||
-      (statusFilter === "reserved"  && rs === "reserved") ||
+      (statusFilter === "reserved"  && (rs === "reserved" || s.includes("reserved"))) ||
+      (statusFilter === "paused"    && s.includes("pause")) ||
       (statusFilter === "completed" && (s.includes("complete") || rs === "completed"));
     const matchProposal =
       proposalFilter === "all" ||
@@ -200,10 +238,10 @@ export function AllOrdersPage() {
         />
         <div style={{ display: "flex", gap: 6 }}>
           {([
-            { key: "all",      label: "Visi" },
-            { key: "working",  label: "Vykdomi" },
-            { key: "reserved", label: "Rezervuoti" },
-            { key: "completed",label: "Užbaigti" },
+            { key: "all",       label: "Visi" },
+            { key: "reserved",  label: "Rezervuoti" },
+            { key: "paused",    label: "Sustabdyti" },
+            { key: "completed", label: "Užbaigti" },
           ] as { key: StatusFilter; label: string }[]).map(({ key, label }) => (
             <button key={key} onClick={() => setStatusFilter(key)}
               className={`btn btn-sm ${statusFilter === key ? "btn-primary" : "btn-secondary"}`}>
@@ -242,15 +280,13 @@ export function AllOrdersPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: 40 }} />
-              <col style={{ width: 95 }} />
-              <col style={{ width: 155 }} />
-              <col style={{ width: 155 }} />
-              <col style={{ width: 95 }} />
-              <col style={{ width: 115 }} />
-              <col style={{ width: 50 }} />
-              <col style={{ width: 120 }} /> 
-              <col style={{ width: 125 }} />
+              <col style={{ width: 100 }} />
+              <col style={{ width: 160 }} />
+              <col style={{ width: 165 }} />
               <col style={{ width: 110 }} />
+              <col style={{ width: 120 }} />
+              <col style={{ width: 50 }} />
+              <col style={{ width: 60 }} />
             </colgroup>
             <thead>
               <tr style={{ background: "var(--surface-2)", borderBottom: "2px solid var(--border)" }}>
@@ -261,21 +297,22 @@ export function AllOrdersPage() {
                 <th style={th()}>Statusas</th>
                 <th style={th()}>Pasiūlymas</th>
                 <th style={th("center")}>Prekės</th>
-                <th style={th("center")}>Veiksmas</th>
-                <th style={th("center")}>Pasiūlymas</th>
-                <th style={th("center")}>PDF</th>
+                <th style={th("center")}>Veiksmai</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((order) => {
-                const expanded    = expandedIds.has(order.id);
-                const itemCount   = order.items?.length ?? 0;
-                const isCompleted = order.status?.toLowerCase().includes("complete");
-                const isSpecial   = order.orderType === OrderType.SpecialOffer;
-                const isStandard  = !isSpecial;
+                const expanded     = expandedIds.has(order.id);
+                const itemCount    = order.items?.length ?? 0;
+                const isCompleted  = order.status?.toLowerCase().includes("complete");
+                const isDbReserved = order.status?.toLowerCase().includes("reserved");
+                const isPaused     = order.status?.toLowerCase().includes("pause");
+                const isPending    = order.status?.toLowerCase().includes("pend");
                 const reserveState = reserveStates[order.id] ?? "idle";
-                const isWorking   = reserveState === "working";
-                const isReserved  = reserveState === "reserved";
+                const isWorking    = reserveState === "working";
+                const isReserved   = reserveState === "reserved" || isDbReserved;
+                const isSpecial    = order.orderType === OrderType.SpecialOffer;
+                const menuOpen     = openMenu === order.id;
 
                 const total = order.items?.reduce((sum, item) => {
                   const price = productMap[item.productId]?.price ?? 0;
@@ -343,78 +380,108 @@ export function AllOrdersPage() {
                         <Badge variant={proposalVariant(order.orderType)}>{proposalLabel(order.orderType)}</Badge>
                       </td>
 
+                      {/* Item count */}
                       <td style={{ ...td(), textAlign: "center" }}>
                         <span style={{ display: "inline-block", minWidth: 24, padding: "2px 8px", background: "var(--surface-2)", borderRadius: 99, fontWeight: 700, fontSize: 12 }}>
                           {itemCount}
                         </span>
                       </td>
 
+                      {/* ── Three-dot actions menu ── */}
                       <td style={{ ...td(), textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
-                        {isStandard ? (
-                          <span style={{ fontSize: 11, color: "var(--text-3)" }}>—</span>
-                        ) : isCompleted || reserveState === "completed" ? (
-                          <span style={{ fontSize: 11, color: "var(--success)", fontWeight: 600 }}>✓ Atlikta</span>
-                        ) : isReserved ? (
+                        <div style={{ position: "relative", display: "inline-block" }} ref={menuOpen ? menuRef : undefined}>
                           <button
-                            className="btn btn-sm"
-                            style={{ background: "#16a34a", color: "#fff", border: "none", padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
-                            onClick={(e) => handleComplete(order, e)}
+                            className="btn btn-ghost btn-icon"
+                            style={{ fontWeight: 800, fontSize: 16, letterSpacing: 1, padding: "2px 8px" }}
+                            onClick={(e) => { e.stopPropagation(); setOpenMenu(menuOpen ? null : order.id); }}
+                            title="Veiksmai"
                           >
-                            Užbaigti
+                            •••
                           </button>
-                        ) : (
-                          <button
-                            className="btn btn-sm"
-                            style={{ background: "#6366f1", color: "#fff", border: "none", padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", opacity: isWorking ? 0.6 : 1 }}
-                            disabled={isWorking}
-                            onClick={(e) => handleReserveClick(order, e)}
-                          >
-                            {isWorking ? "…" : "Rezervuoti"}
-                          </button>
-                        )}
-                      </td>
 
-                      <td style={{ ...td(), textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
-                        {isSpecial ? (
-                          <button
-                            className="btn btn-sm"
-                            style={{ background: "#0ea5e9", color: "#fff", border: "none", padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
-                            onClick={(e) => handleSendProposal(order, e)}
-                          >
-                            Siųsti pasiūlymą
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: 11, color: "var(--text-3)" }}>—</span>
-                        )}
-                      </td>
+                          {menuOpen && (
+                            <div style={{
+                              position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
+                              background: "var(--surface)", border: "1px solid var(--border)",
+                              borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+                              minWidth: 190, padding: "4px 0",
+                            }}>
+                              {/* Reserve — only for PENDING */}
+                              {(isPending || (!isReserved && !isPaused && !isCompleted)) && (
+                                <MenuItem
+                                  icon="pi pi-check-circle"
+                                  label={isWorking ? "Rezervuojama…" : "Rezervuoti"}
+                                  color="#6366f1"
+                                  disabled={isWorking}
+                                  onClick={(e) => handleReserveClick(order, e)}
+                                />
+                              )}
 
-                      {/* PDF download cell */}
-                      <td style={{ ...td(), textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
-                        {order.pdfUrl ? (
-                          <button
-                            className="btn btn-sm"
-                            style={{
-                              background: pdfLoading[order.id] ? "#94a3b8" : "#16a34a",
-                              color: "#fff", border: "none", padding: "4px 10px",
-                              borderRadius: 6, fontSize: 11, fontWeight: 600,
-                              cursor: pdfLoading[order.id] ? "default" : "pointer",
-                              whiteSpace: "nowrap",
-                            }}
-                            disabled={pdfLoading[order.id]}
-                            onClick={(e) => handleDownloadPdf(order, e)}
-                          >
-                            {pdfLoading[order.id] ? "…" : "⬇ PDF"}
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: 11, color: "var(--text-3)" }}>—</span>
-                        )}
+                              {/* Complete — only for RESERVED */}
+                              {(isReserved && !isPaused) && (
+                                <MenuItem
+                                  icon="pi pi-flag"
+                                  label="Užbaigti"
+                                  color="#16a34a"
+                                  onClick={(e) => handleComplete(order, e)}
+                                />
+                              )}
+
+                              {/* Pause — only for RESERVED */}
+                              {(isReserved && !isPaused) && (
+                                <MenuItem
+                                  icon="pi pi-pause"
+                                  label="Sustabdyti"
+                                  color="#64748b"
+                                  onClick={(e) => handlePause(order, e)}
+                                />
+                              )}
+
+                              {/* Resume — only for PAUSED */}
+                              {isPaused && (
+                                <MenuItem
+                                  icon="pi pi-play"
+                                  label="Pratęsti"
+                                  color="#0ea5e9"
+                                  onClick={(e) => handleResume(order, e)}
+                                />
+                              )}
+
+                              {/* Divider */}
+                              <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+
+                              {/* Send proposal — only for special offer */}
+                              {isSpecial && (
+                                <MenuItem
+                                  icon="pi pi-send"
+                                  label="Siųsti pasiūlymą"
+                                  color="#0ea5e9"
+                                  onClick={(e) => handleSendProposal(order, e)}
+                                />
+                              )}
+
+                              {/* PDF download */}
+                              {order.pdfUrl ? (
+                                <MenuItem
+                                  icon="pi pi-file-pdf"
+                                  label={pdfLoading[order.id] ? "Kraunama…" : "Atsisiųsti PDF"}
+                                  color="#16a34a"
+                                  disabled={pdfLoading[order.id]}
+                                  onClick={(e) => handleDownloadPdf(order, e)}
+                                />
+                              ) : (
+                                <MenuItem icon="pi pi-file-pdf" label="PDF nėra" color="var(--text-3)" disabled />
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </td>
                     </tr>
 
                     {/* Expanded items sub-table */}
                     {expanded && (
                       <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                        <td colSpan={10} style={{ padding: 0, background: "#f5f7ff", textAlign: "left" }}>
+                        <td colSpan={8} style={{ padding: 0, background: "#f5f7ff", textAlign: "left" }}>
                           <div style={{ paddingLeft: 40 }}>
                             {!itemCount ? (
                               <div style={{ padding: "12px 16px", color: "var(--text-3)", fontStyle: "italic", fontSize: 13 }}>Nėra prekių</div>
@@ -474,13 +541,44 @@ export function AllOrdersPage() {
         />
       )}
 
-      <style>{`.order-row:hover { background: var(--surface-2) !important; }`}</style>
+      <style>{`
+        .order-row:hover { background: var(--surface-2) !important; }
+        .menu-item:hover { background: var(--surface-2); }
+      `}</style>
     </div>
   );
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+// ── Menu item component ──────────────────────────────────────────────────────
+function MenuItem({
+  icon, label, color, onClick, disabled = false,
+}: {
+  icon: string;
+  label: string;
+  color: string;
+  onClick?: (e: React.MouseEvent) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      className="menu-item"
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        display: "flex", alignItems: "center", gap: 10,
+        width: "100%", padding: "8px 14px", border: "none",
+        background: "transparent", cursor: disabled ? "default" : "pointer",
+        fontSize: 13, color: disabled ? "var(--text-3)" : "var(--text-1)",
+        textAlign: "left", opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <i className={icon} style={{ fontSize: 13, color: disabled ? "var(--text-3)" : color, width: 16 }} />
+      {label}
+    </button>
+  );
+}
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
 function SummaryCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="card" style={{ padding: "16px 20px", marginTop: 16, minHeight: 80, boxSizing: "border-box" }}>

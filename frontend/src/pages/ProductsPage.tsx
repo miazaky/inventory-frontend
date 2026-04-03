@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { productsApi } from "../api/products";
-import type { Product, CreateProductCommand, UpdateProductCommand } from "../types";
+import { warehouseInventoryApi } from "../api/warehouseInventory";
+import type { Product, CreateProductCommand, UpdateProductCommand, WarehouseInventory } from "../types";
 import { Modal } from "../components/Modal";
 
 interface ProductFormData {
@@ -14,22 +15,27 @@ const emptyForm: ProductFormData = { sku: "", name: "", length: "", price: "" };
 
 function ProductRow({
   product,
+  invs,
   onSaved,
   onDelete,
 }: {
   product: Product;
+  invs: WarehouseInventory[];
   onSaved: () => void;
   onDelete: (p: Product) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<ProductFormData>({
-    sku: product.sku || "",
-    name: product.name || "",
+    sku:    product.sku           || "",
+    name:   product.name          || "",
     length: product.length?.toString() || "",
-    price: product.price?.toString() || "",
+    price:  product.price?.toString()  || "",
   });
+  const [qtys, setQtys] = useState<Record<string, string>>(
+    Object.fromEntries(invs.map((i) => [i.id, String(i.quantityCurrent)]))
+  );
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error,  setError]  = useState<string | null>(null);
 
   const set = (field: keyof ProductFormData) =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -40,13 +46,24 @@ function ProductRow({
     setError(null);
     try {
       const cmd: UpdateProductCommand = {
-        id: product.id,
-        sku: form.sku || undefined,
-        name: form.name,
+        id:     product.id,
+        sku:    form.sku    || undefined,
+        name:   form.name,
         length: form.length ? Number(form.length) : undefined,
-        price: form.price ? Number(form.price) : undefined,
+        price:  form.price  ? Number(form.price)  : undefined,
       };
       await productsApi.update(product.id, cmd);
+
+      await Promise.all(
+        invs.map((inv) => {
+          const newQty = Number(qtys[inv.id] ?? inv.quantityCurrent);
+          if (newQty !== inv.quantityCurrent) {
+            return warehouseInventoryApi.updateQuantity(inv.id, newQty);
+          }
+          return Promise.resolve();
+        })
+      );
+
       setEditing(false);
       onSaved();
     } catch (e: unknown) {
@@ -58,27 +75,49 @@ function ProductRow({
 
   const handleCancel = () => {
     setForm({
-      sku: product.sku || "",
-      name: product.name || "",
+      sku:    product.sku           || "",
+      name:   product.name          || "",
       length: product.length?.toString() || "",
-      price: product.price?.toString() || "",
+      price:  product.price?.toString()  || "",
     });
+    setQtys(Object.fromEntries(invs.map((i) => [i.id, String(i.quantityCurrent)])));
     setError(null);
     setEditing(false);
   };
+
+  const totalQty = invs.reduce((s, i) => s + i.quantityCurrent, 0);
 
   if (editing) {
     return (
       <>
         <tr className="row-editing">
           <td>
-            <input className="input input-inline" value={form.sku} onChange={set("sku")} placeholder="Kodas" />
+            <input className="input input-inline" value={form.sku}  onChange={set("sku")}  placeholder="Kodas" />
           </td>
           <td>
             <input className="input input-inline" value={form.name} onChange={set("name")} placeholder="Pavadinimas" />
           </td>
           <td>
-            <input className="input input-inline" type="number" value={form.length} onChange={set("length")} placeholder="cm" style={{ width: 90 }} />
+            <input className="input input-inline" type="number" value={form.length} onChange={set("length")} placeholder="mm" style={{ width: 90 }} />
+          </td>
+          <td style={{ textAlign: "center" }}>
+            {invs.length === 0 ? (
+              <span style={{ color: "var(--text-3)", fontSize: 12 }}>—</span>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
+                {invs.map((inv) => (
+                  <input
+                    key={inv.id}
+                    className="input input-inline"
+                    type="number"
+                    min={0}
+                    value={qtys[inv.id] ?? inv.quantityCurrent}
+                    onChange={(e) => setQtys((q) => ({ ...q, [inv.id]: e.target.value }))}
+                    style={{ width: 70, textAlign: "center" }}
+                  />
+                ))}
+              </div>
+            )}
           </td>
           <td>
             <input className="input input-inline" type="number" step="0.01" value={form.price} onChange={set("price")} placeholder="0.00" style={{ width: 100 }} />
@@ -94,7 +133,7 @@ function ProductRow({
         </tr>
         {error && (
           <tr>
-            <td colSpan={5}>
+            <td colSpan={6}>
               <div className="alert alert-error" style={{ margin: "4px 0", padding: "6px 10px", fontSize: 12 }}>⚠ {error}</div>
             </td>
           </tr>
@@ -108,6 +147,7 @@ function ProductRow({
       <td><span className="mono">{product.sku || "—"}</span></td>
       <td><span style={{ fontWeight: 500 }}>{product.name || "—"}</span></td>
       <td>{product.length != null ? `${product.length} cm` : "—"}</td>
+      <td style={{ textAlign: "center", fontWeight: 700 }}>{totalQty > 0 ? totalQty : <span style={{ color: "var(--text-3)" }}>—</span>}</td>
       <td>{product.price != null ? `${product.price.toFixed(2)} €` : "—"}</td>
       <td>
         <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
@@ -120,20 +160,25 @@ function ProductRow({
 }
 
 export function ProductsPage() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
-  const [addForm, setAddForm] = useState<ProductFormData>(emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState<Product | null>(null);
+  const [products,  setProducts]  = useState<Product[]>([]);
+  const [inventory, setInventory] = useState<WarehouseInventory[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState<string | null>(null);
+  const [search,    setSearch]    = useState("");
+  const [showAdd,   setShowAdd]   = useState(false);
+  const [addForm,   setAddForm]   = useState<ProductFormData>(emptyForm);
+  const [saving,    setSaving]    = useState(false);
+  const [deleting,  setDeleting]  = useState<Product | null>(null);
 
   const load = async () => {
     try {
       setLoading(true);
-      const data = await productsApi.getAll();
-      setProducts(data || []);
+      const [p, inv] = await Promise.all([
+        productsApi.getAll(),
+        warehouseInventoryApi.getAll(),
+      ]);
+      setProducts(p  || []);
+      setInventory(inv || []);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load products");
     } finally {
@@ -143,14 +188,20 @@ export function ProductsPage() {
 
   useEffect(() => { load(); }, []);
 
+  const invByProduct: Record<string, WarehouseInventory[]> = {};
+  inventory.forEach((inv) => {
+    if (!invByProduct[inv.productId]) invByProduct[inv.productId] = [];
+    invByProduct[inv.productId].push(inv);
+  });
+
   const handleCreate = async () => {
     setSaving(true);
     try {
       const cmd: CreateProductCommand = {
-        sku: addForm.sku || undefined,
-        name: addForm.name,
+        sku:    addForm.sku    || undefined,
+        name:   addForm.name,
         length: addForm.length ? Number(addForm.length) : undefined,
-        price: addForm.price ? Number(addForm.price) : undefined,
+        price:  addForm.price  ? Number(addForm.price)  : undefined,
       };
       await productsApi.create(cmd);
       setShowAdd(false);
@@ -209,18 +260,25 @@ export function ProductsPage() {
               <th>Kodas</th>
               <th>Pavadinimas</th>
               <th>Ilgis</th>
+              <th style={{ textAlign: "center" }}>Kiekis</th>
               <th>Kaina</th>
-              <th>Veiksmai</th>
+              <th style={{ textAlign: "center" }}>Veiksmai</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={5} className="td-loading">Kraunama...</td></tr>
+              <tr><td colSpan={6} className="td-loading">Kraunama...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={5} className="td-empty">Produktų nerasta.</td></tr>
+              <tr><td colSpan={6} className="td-empty">Produktų nerasta.</td></tr>
             ) : (
               filtered.map((p) => (
-                <ProductRow key={p.id} product={p} onSaved={load} onDelete={setDeleting} />
+                <ProductRow
+                  key={p.id}
+                  product={p}
+                  invs={invByProduct[p.id] ?? []}
+                  onSaved={load}
+                  onDelete={setDeleting}
+                />
               ))
             )}
           </tbody>
@@ -242,8 +300,8 @@ export function ProductsPage() {
             </div>
             <div className="form-grid-2">
               <div className="form-group">
-                <label className="form-label">Ilgis (cm)</label>
-                <input className="input" type="number" value={addForm.length} onChange={(e) => setAddForm((f) => ({ ...f, length: e.target.value }))} placeholder="pvz. 120" />
+                <label className="form-label">Ilgis (mm)</label>
+                <input className="input" type="number" value={addForm.length} onChange={(e) => setAddForm((f) => ({ ...f, length: e.target.value }))} placeholder="pvz. 1200" />
               </div>
               <div className="form-group">
                 <label className="form-label">Kaina (€)</label>

@@ -22,9 +22,17 @@ export const ordersApi = {
     apiFetch<void>(`/api/Orders/${id}/complete`, { method: "POST" }),
 
   reserve: (id: string) =>
-    apiFetch<void>(`/api/Orders/${id}/complete`, { method: "POST" }), //after change to reserve endpoint, update this to `/api/Orders/${id}/reserve`
+    apiFetch<void>(`/api/Orders/${id}/reserve`, { method: "POST" }),
 
-  /** Returns a 15-minute SAS download URL for the order's stored PDF. */
+  pause: (id: string) =>
+    apiFetch<void>(`/api/Orders/${id}/pause`, { method: "POST" }),
+
+  resume: (id: string) =>
+    apiFetch<void>(`/api/Orders/${id}/resume`, { method: "POST" }),
+
+  sendProposalEmail: (id: string) =>
+    apiFetch<void>(`/api/Orders/${id}/send-proposal-email`, { method: "POST" }),
+
   getPdfUrl: (id: string) =>
     apiFetch<{ url: string }>(`/api/Orders/${id}/pdf-url`),
 };

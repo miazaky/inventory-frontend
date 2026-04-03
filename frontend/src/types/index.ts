@@ -1,3 +1,20 @@
+// ── System Category ──────────────────────────────────────────────────────────
+export enum SystemCategory {
+  Shared     = 0,
+  Ground     = 1,
+  FlatRoof   = 2,
+  SlopedRoof = 3,
+  RoofShared = 4,
+}
+
+export const SYSTEM_CATEGORY_LABELS: Record<SystemCategory, string> = {
+  [SystemCategory.Shared]:     "Bendros (visos sistemos)",
+  [SystemCategory.Ground]:     "Žemės sistemos",
+  [SystemCategory.FlatRoof]:   "Plokščio stogo sistemos",
+  [SystemCategory.SlopedRoof]: "Šlaitinio stogo sistemos",
+  [SystemCategory.RoofShared]: "Stogų sistemos (bendros)",
+};
+
 // ── Products ────────────────────────────────────────────────────────────────
 export interface Product {
   id: string;
@@ -6,6 +23,7 @@ export interface Product {
   length: number | null;
   description: string | null;
   price: number | null;
+  systemCategory: SystemCategory;
 }
 
 export interface CreateProductCommand {
@@ -14,6 +32,7 @@ export interface CreateProductCommand {
   length?: number;
   description?: string;
   price?: number;
+  systemCategory?: SystemCategory;
 }
 
 export interface UpdateProductCommand {
@@ -23,6 +42,7 @@ export interface UpdateProductCommand {
   length?: number;
   description?: string;
   price?: number;
+  systemCategory?: SystemCategory;
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -106,7 +126,6 @@ export interface TransferInventoryCommand {
   toWarehouseId: string;
   quantity: number;
 }
-
 
 // ── Order Type ───────────────────────────────────────────────────────────────
 export enum OrderType {

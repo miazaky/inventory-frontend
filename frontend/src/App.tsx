@@ -7,19 +7,30 @@ import { ProductsPage } from "./pages/ProductsPage";
 import { WarehousesPage } from "./pages/WarehousesPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { TransfersPage } from "./pages/TransfersPage";
-// import { OrdersPage } from "./pages/OrdersPage";
 import { AllOrdersPage } from "./pages/AllOrdersPage";
+import { GroundMaterialsPage, FlatRoofMaterialsPage, SlopedRoofMaterialsPage } from "./pages/GroundMaterialsPage";
 
-type Page = "dashboard" | "products" | "warehouses" | "inventory" | "transfers" /*| "orders" */| "allorders";
+type Page =
+  | "dashboard"
+  | "products"
+  | "warehouses"
+  | "inventory"
+  | "transfers"
+  | "allorders"
+  | "ground"
+  | "flatroof"
+  | "slopedroof";
 
-const navItems: { key: Page; label: string; icon: string }[] = [
+const navItems: { key: Page; label: string; icon: string; group?: string }[] = [
   { key: "dashboard",  label: "Apžvalga",      icon: "📊" },
-  { key: "products",   label: "Medžiagos",     icon: "📦" },
-  { key: "warehouses", label: "Sandėliai",     icon: "🏭" },
-  { key: "inventory",  label: "Inventorius",   icon: "🗂️" },
-  { key: "allorders",  label: "Užsakymai",  icon: "📋" },
-  { key: "transfers",  label: "Perkėlimai",    icon: "🔀" },
-  // { key: "orders",     label: "Užsakymai",     icon: "🛒" },
+  { key: "allorders",  label: "Užsakymai",      icon: "📋" },
+  { key: "ground",     label: "Žemės sistema",        icon: "🌱", group: "Medžiagos" },
+  { key: "flatroof",   label: "Plokščias stogas",      icon: "🏢", group: "Medžiagos" },
+  { key: "slopedroof", label: "Šlaitinis stogas",      icon: "🏠", group: "Medžiagos" },
+  { key: "products",   label: "Visos medžiagos",       icon: "📦", group: "Medžiagos" },
+  { key: "warehouses", label: "Sandėliai",      icon: "🏭" },
+  { key: "inventory",  label: "Inventorius",    icon: "🗂️" },
+  { key: "transfers",  label: "Perkėlimai",     icon: "🔀" },
 ];
 
 const pages: Record<Page, React.FC> = {
@@ -28,18 +39,19 @@ const pages: Record<Page, React.FC> = {
   warehouses: WarehousesPage,
   inventory:  InventoryPage,
   transfers:  TransfersPage,
-  // orders:     OrdersPage,
   allorders:  AllOrdersPage,
+  ground:     GroundMaterialsPage,
+  flatroof:   FlatRoofMaterialsPage,
+  slopedroof: SlopedRoofMaterialsPage,
 };
 
 export default function App() {
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userEmail, setUserEmail]   = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
-  const [current, setCurrent] = useState<Page>("dashboard");
-  const logo = "/MK_juodas_mini_permatomas.png"
+  const [current, setCurrent]       = useState<Page>("dashboard");
+  const logo = "/MK_juodas_mini_permatomas.png";
 
   useEffect(() => {
-    // Check if we're returning from a Microsoft login redirect
     if (window.location.hash.includes("access_token")) {
       const token = parseTokenFromHash();
       if (token) {
@@ -47,24 +59,16 @@ export default function App() {
         if (email && isEmailAllowed(email)) {
           sessionStorage.setItem("userEmail", email);
           setUserEmail(email);
-          // Clean up the URL hash
           window.history.replaceState({}, document.title, window.location.pathname);
         } else {
           setAccessDenied(true);
-          setTimeout(() => {
-            sessionStorage.clear();
-            setAccessDenied(false);
-          }, 3000);
+          setTimeout(() => { sessionStorage.clear(); setAccessDenied(false); }, 3000);
         }
       }
       return;
     }
-
-    // Check if already logged in from a previous session
     const stored = sessionStorage.getItem("userEmail");
-    if (stored && isEmailAllowed(stored)) {
-      setUserEmail(stored);
-    }
+    if (stored && isEmailAllowed(stored)) setUserEmail(stored);
   }, []);
 
   const handleLogout = () => {
@@ -85,11 +89,36 @@ export default function App() {
     );
   }
 
-  if (!userEmail) {
-    return <LoginPage />;
-  }
+  if (!userEmail) return <LoginPage />;
 
   const PageComponent = pages[current];
+
+  // Build nav with group labels
+  const rendered: React.ReactNode[] = [];
+  let lastGroup: string | undefined = undefined;
+  navItems.forEach((item) => {
+    if (item.group && item.group !== lastGroup) {
+      rendered.push(
+        <div key={`group-${item.group}`} style={{ padding: "10px 14px 4px", fontSize: 10, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          {item.group}
+        </div>
+      );
+      lastGroup = item.group;
+    } else if (!item.group && lastGroup) {
+      lastGroup = undefined;
+    }
+    rendered.push(
+      <button
+        key={item.key}
+        onClick={() => setCurrent(item.key)}
+        className={`nav-item ${current === item.key ? "active" : ""}`}
+        style={item.group ? { paddingLeft: 24 } : undefined}
+      >
+        <span className="nav-icon">{item.icon}</span>
+        {item.label}
+      </button>
+    );
+  });
 
   return (
     <div className="app-shell">
@@ -104,16 +133,7 @@ export default function App() {
           </div>
         </div>
         <nav className="sidebar-nav">
-          {navItems.map((item) => (
-            <button
-              key={item.key}
-              onClick={() => setCurrent(item.key)}
-              className={`nav-item ${current === item.key ? "active" : ""}`}
-            >
-              <span className="nav-icon">{item.icon}</span>
-              {item.label}
-            </button>
-          ))}
+          {rendered}
         </nav>
         <div style={{ padding: "12px 14px", borderTop: "1px solid var(--border)", marginTop: "auto" }}>
           <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 8, wordBreak: "break-all" }}>{userEmail}</div>
@@ -123,7 +143,7 @@ export default function App() {
         </div>
       </aside>
       <main className="main-content">
-        <PageComponent />
+        <PageComponent key={current} />
       </main>
     </div>
   );

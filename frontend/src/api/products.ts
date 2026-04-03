@@ -1,12 +1,12 @@
 import { apiFetch } from "./apiClient";
-import type {
-  Product,
-  CreateProductCommand,
-  UpdateProductCommand,
-} from "../types";
+import type { Product, CreateProductCommand, UpdateProductCommand } from "../types";
+import { SystemCategory } from "../types";
 
 export const productsApi = {
   getAll: () => apiFetch<Product[]>("/api/Products"),
+
+  getByCategory: (category: SystemCategory) =>
+    apiFetch<Product[]>(`/api/Products?category=${category}`),
 
   getById: (id: string) => apiFetch<Product>(`/api/Products/${id}`),
 

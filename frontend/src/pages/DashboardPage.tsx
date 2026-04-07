@@ -106,7 +106,7 @@ export function DashboardPage() {
               style={{
                 padding: "20px 18px",
                 borderRight: i < byCategory.length - 1 ? "1px solid var(--border)" : "none",
-                display: "flex", flexDirection: "column", gap: 6,
+                display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6,
               }}
             >
               <div style={{ fontSize: 20 }}>{icon}</div>
@@ -131,7 +131,13 @@ export function DashboardPage() {
           <>
             {/* Group low stock by product category */}
             {SHOWN_CATEGORIES.map(({ cat, icon, color }) => {
-              const items = lowStock.filter((inv) => productMap[inv.productId]?.systemCategory === cat);
+              const items = lowStock
+                .filter((inv) => productMap[inv.productId]?.systemCategory === cat)
+                .sort((a, b) => {
+                  const skuA = productMap[a.productId]?.sku || "";
+                  const skuB = productMap[b.productId]?.sku || "";
+                  return skuA.localeCompare(skuB, undefined, { sensitivity: "base" });
+                });
               if (items.length === 0) return null;
               return (
                 <div key={cat}>
@@ -144,6 +150,13 @@ export function DashboardPage() {
                     {icon} {SYSTEM_CATEGORY_LABELS[cat]}
                   </div>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <colgroup>
+                      <col style={{ width: "40%" }} />
+                      <col style={{ width: "15%" }} />
+                      <col style={{ width: "20%" }} />
+                      <col style={{ width: "10%" }} />
+                      <col style={{ width: "15%" }} />
+                    </colgroup>
                     <tbody>
                       {items.map((item) => (
                         <tr key={item.id} style={{ borderBottom: "1px solid var(--border)" }}>
@@ -160,9 +173,6 @@ export function DashboardPage() {
                           </td>
                           <td style={{ padding: "10px 16px", fontWeight: 600, color: "var(--danger)" }}>
                             {item.quantityCurrent}
-                          </td>
-                          <td style={{ padding: "10px 16px", color: "var(--text-3)" }}>
-                            min: {item.quantityMin}
                           </td>
                           <td style={{ padding: "10px 16px" }}>
                             <Badge variant="red">Mažas kiekis</Badge>

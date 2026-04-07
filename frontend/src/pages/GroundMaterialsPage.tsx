@@ -163,9 +163,6 @@ function ProductRow({ product, invs, onSaved, onDelete }: ProductRowProps) {
       </td>
       <td style={td()}>
         <span style={{ fontWeight: 500 }}>{product.name || "—"}</span>
-        {product.description && (
-          <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>{product.description}</div>
-        )}
       </td>
       <td style={{ ...td(), textAlign: "center", color: "var(--text-2)" }}>
         {product.length ?? "—"}
@@ -262,10 +259,12 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
     invByProduct[inv.productId].push(inv);
   });
 
-  const filtered = products.filter((p) => {
-    const q = search.toLowerCase();
-    return !q || p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q);
-  });
+  const filtered = products
+    .filter((p) => {
+      const q = search.toLowerCase();
+      return !q || p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q);
+    })
+    .sort((a, b) => (a.sku ?? "").localeCompare(b.sku ?? ""));
 
   const lowCount   = products.filter((p) => stockStatus(invByProduct[p.id] ?? []) === "yellow").length;
   const emptyCount = products.filter((p) => stockStatus(invByProduct[p.id] ?? []) === "red").length;

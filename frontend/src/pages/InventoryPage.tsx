@@ -189,17 +189,24 @@ export function InventoryPage() {
     }
   };
 
-  const filtered = inventory.filter((item) => {
-    const product = productMap[item.productId];
-    const warehouse = warehouseMap[item.warehouseId];
-    const q = search.toLowerCase();
-    return (
-      product?.name?.toLowerCase().includes(q) ||
-      product?.sku?.toLowerCase().includes(q) ||
-      warehouse?.name?.toLowerCase().includes(q) ||
-      item.quantityCurrent.toString().includes(q)
-    );
-  });
+  const filtered = inventory
+    .filter((item) => {
+      const product = productMap[item.productId];
+      const warehouse = warehouseMap[item.warehouseId];
+      const q = search.toLowerCase();
+
+      return (
+        product?.name?.toLowerCase().includes(q) ||
+        product?.sku?.toLowerCase().includes(q) ||
+        warehouse?.name?.toLowerCase().includes(q) ||
+        item.quantityCurrent.toString().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      const skuA = productMap[a.productId]?.sku || "";
+      const skuB = productMap[b.productId]?.sku || "";
+      return skuA.localeCompare(skuB, undefined, { sensitivity: "base" });
+    });
 
   return (
     <div className="page">

@@ -229,9 +229,11 @@ export function ProductsPage() {
     }
   };
 
-  const filtered = products.filter((p) =>
-    `${p.name ?? ""} ${p.sku ?? ""}`.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = products
+    .filter((p) =>
+      `${p.name ?? ""} ${p.sku ?? ""}`.toLowerCase().includes(search.toLowerCase())
+    )
+    .sort((a, b) => (a.sku ?? "").localeCompare(b.sku ?? ""));
 
   return (
     <div className="page">

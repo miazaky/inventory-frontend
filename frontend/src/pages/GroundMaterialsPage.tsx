@@ -7,6 +7,7 @@ import type { Order, Product, WarehouseInventory, Warehouse, UpdateProductComman
 import { SystemCategory } from "../types";
 import { Badge } from "../components/Badge";
 import { Modal } from "../components/Modal";
+import { GROUND_MATERIAL_SORT_ORDER, FLAT_ROOF_MATERIAL_SORT_ORDER, SLOPED_ROOF_MATERIAL_SORT_ORDER } from "../types";
 
 export function GroundMaterialsPage() {
   return <CategoryMaterialsPage category={SystemCategory.Ground} />;
@@ -23,6 +24,20 @@ const PAGE_META: Record<number, { title: string; subtitle: string; icon: string;
   [SystemCategory.FlatRoof]:   { title: "Plokščio stogo sistemos medžiagos",  subtitle: "PT05 / PT10 / PT15 / PT20 / RV10 komponentai", icon: "🏢", color: "#2563eb" },
   [SystemCategory.SlopedRoof]: { title: "Šlaitinio stogo sistemos medžiagos", subtitle: "Bėgeliai, kabliai ir tvirtinimo elementai",     icon: "🏠", color: "#9333ea" },
 };
+
+
+function normalizeSortText(value: string | null | undefined) {
+  return (value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function getMaterialSortIndex(product: Product, sortOrder: string[]) {
+  const text = normalizeSortText([product.sku, product.name, product.length?.toString()].filter(Boolean).join(" "));
+  const matchedIndex = sortOrder.findIndex((pattern) => text.includes(normalizeSortText(pattern)));
+  return matchedIndex === -1 ? Number.MAX_SAFE_INTEGER : matchedIndex;
+}
 
 // ── Inline editable row ──────────────────────────────────────────────────────
 interface ProductRowProps {
@@ -288,7 +303,27 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
       const q = search.toLowerCase();
       return !q || p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q);
     })
-    .sort((a, b) => (a.sku ?? "").localeCompare(b.sku ?? ""));
+    .sort((a, b) => {
+      if (category === SystemCategory.Ground) {
+        const orderA = getMaterialSortIndex(a, GROUND_MATERIAL_SORT_ORDER);
+        const orderB = getMaterialSortIndex(b, GROUND_MATERIAL_SORT_ORDER);
+        if (orderA !== orderB) return orderA - orderB;
+      } else if (category === SystemCategory.FlatRoof) {
+        const orderA = getMaterialSortIndex(a, FLAT_ROOF_MATERIAL_SORT_ORDER);
+        const orderB = getMaterialSortIndex(b, FLAT_ROOF_MATERIAL_SORT_ORDER);
+        if (orderA !== orderB) return orderA - orderB;
+      } else if (category === SystemCategory.SlopedRoof) {
+        const orderA = getMaterialSortIndex(a, SLOPED_ROOF_MATERIAL_SORT_ORDER);
+        const orderB = getMaterialSortIndex(b, SLOPED_ROOF_MATERIAL_SORT_ORDER);
+        if (orderA !== orderB) return orderA - orderB;
+      }
+
+      return (
+        (a.sku ?? "").localeCompare(b.sku ?? "") ||
+        (a.name ?? "").localeCompare(b.name ?? "") ||
+        (a.length ?? 0) - (b.length ?? 0)
+      );
+    });
 
   const lowCount   = products.filter((p) => stockStatus(invByProduct[p.id] ?? []) === "yellow").length;
   const emptyCount = products.filter((p) => stockStatus(invByProduct[p.id] ?? []) === "red").length;

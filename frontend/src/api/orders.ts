@@ -35,4 +35,13 @@ export const ordersApi = {
 
   getPdfUrl: (id: string) =>
     apiFetch<{ url: string }>(`/api/Orders/${id}/pdf-url`),
+
+  delete: (id: string) =>
+    apiFetch<void>(`/api/Orders/${id}`, { method: "DELETE" }),
+
+  updateStatus: (id: string, status: string) =>
+    apiFetch<void>(`/api/Orders/${id}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ id, newStatus: status }),
+    }),
 };

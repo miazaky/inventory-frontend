@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { productsApi } from "../api/products";
+import { ordersApi } from "../api/orders";
 import { warehouseInventoryApi } from "../api/warehouseInventory";
 import { warehousesApi } from "../api/warehouses";
-import type { Product, WarehouseInventory, Warehouse, UpdateProductCommand } from "../types";
+import type { Order, Product, WarehouseInventory, Warehouse, UpdateProductCommand } from "../types";
 import { SystemCategory } from "../types";
 import { Badge } from "../components/Badge";
 import { Modal } from "../components/Modal";
@@ -27,11 +28,12 @@ const PAGE_META: Record<number, { title: string; subtitle: string; icon: string;
 interface ProductRowProps {
   product: Product;
   invs: WarehouseInventory[];
+  reservedQty: number;
   onSaved: () => void;
   onDelete: (p: Product) => void;
 }
 
-function ProductRow({ product, invs, onSaved, onDelete }: ProductRowProps) {
+function ProductRow({ product, invs, reservedQty, onSaved, onDelete }: ProductRowProps) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     sku:    product.sku           ?? "",
@@ -133,6 +135,11 @@ function ProductRow({ product, invs, onSaved, onDelete }: ProductRowProps) {
               {stockLabel(invs)}
             </Badge>
           </td>
+          <td style={{ textAlign: "center" }}>
+            <span style={{ fontWeight: 700, color: reservedQty > 0 ? "#0ea5e9" : "var(--text-3)" }}>
+              {reservedQty}
+            </span>
+          </td>
           <td><input className="input input-inline" type="number" step="0.01" value={form.price} onChange={set("price")} placeholder="0.00" style={{ width: 90 }} /></td>
           <td>
             <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
@@ -145,7 +152,7 @@ function ProductRow({ product, invs, onSaved, onDelete }: ProductRowProps) {
         </tr>
         {error && (
           <tr>
-            <td colSpan={7}>
+            <td colSpan={8}>
               <div className="alert alert-error" style={{ margin: "4px 0", padding: "6px 10px", fontSize: 12 }}>⚠ {error}</div>
             </td>
           </tr>
@@ -180,6 +187,11 @@ function ProductRow({ product, invs, onSaved, onDelete }: ProductRowProps) {
           {stockLabel(invs)}
         </Badge>
       </td>
+      <td style={{ ...td(), textAlign: "center" }}>
+        <span style={{ fontWeight: 700, color: reservedQty > 0 ? "#0ea5e9" : "var(--text-3)" }}>
+          {reservedQty}
+        </span>
+      </td>
       <td style={{ ...td(), textAlign: "right", color: "var(--text-2)" }}>
         {product.price != null ? `${product.price.toFixed(2)} €` : "—"}
       </td>
@@ -197,6 +209,7 @@ function ProductRow({ product, invs, onSaved, onDelete }: ProductRowProps) {
 function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
   const [products,     setProducts]     = useState<Product[]>([]);
   const [inventory,    setInventory]    = useState<WarehouseInventory[]>([]);
+  const [orders,       setOrders]       = useState<Order[]>([]);
   const [warehouses,   setWarehouses]   = useState<Warehouse[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState<string | null>(null);
@@ -210,10 +223,11 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
     setLoading(true);
     setError(null);
     try {
-      const [p, inv, wh] = await Promise.all([
+      const [p, inv, wh, ord] = await Promise.all([
         productsApi.getAll(),
         warehouseInventoryApi.getAll(),
         warehousesApi.getAll(),
+        ordersApi.getAll(),
       ]);
       const allProds = p || [];
       const hasCategories = allProds.some(
@@ -226,6 +240,7 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
       );
       setInventory(inv || []);
       setWarehouses(wh || []);
+      setOrders(ord || []);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Nepavyko įkelti");
     } finally {
@@ -258,6 +273,15 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
     if (!invByProduct[inv.productId]) invByProduct[inv.productId] = [];
     invByProduct[inv.productId].push(inv);
   });
+
+  const reservedByProduct: Record<string, number> = {};
+  orders
+    .filter((order) => order.status?.toLowerCase().includes("reserved"))
+    .forEach((order) => {
+      (order.items ?? []).forEach((item) => {
+        reservedByProduct[item.productId] = (reservedByProduct[item.productId] ?? 0) + item.quantity;
+      });
+    });
 
   const filtered = products
     .filter((p) => {
@@ -314,19 +338,21 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
               <th style={{ textAlign: "center" }}>Ilgis, mm</th>
               <th style={{ textAlign: "center" }}>Kiekis</th>
               <th style={{ textAlign: "center" }}>Statusas</th>
+              <th style={{ textAlign: "center" }}>Rezervuota</th>
               <th style={{ textAlign: "right" }}>Kaina €</th>
               <th style={{ textAlign: "center" }}>Veiksmai</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={7} className="td-empty">{search ? "Nerasta pagal paiešką" : "Medžiagų nėra"}</td></tr>
+              <tr><td colSpan={8} className="td-empty">{search ? "Nerasta pagal paiešką" : "Medžiagų nėra"}</td></tr>
             ) : (
               filtered.map((p) => (
                 <ProductRow
                   key={p.id}
                   product={p}
                   invs={invByProduct[p.id] ?? []}
+                  reservedQty={reservedByProduct[p.id] ?? 0}
                   onSaved={load}
                   onDelete={setDeleting}
                 />

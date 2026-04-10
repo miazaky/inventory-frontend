@@ -1,20 +1,20 @@
 import { useEffect, useState, Fragment, useRef, type CSSProperties } from "react";
 import { ordersApi } from "../api/orders";
 import { productsApi } from "../api/products";
-import { warehousesApi } from "../api/warehouses";
 import { warehouseInventoryApi } from "../api/warehouseInventory";
-import type { Order, Product } from "../types";
-import { OrderType } from "../types";
+import type { Order, Product, WarehouseInventory } from "../types";
+import { OrderType, SystemCategory } from "../types";
 import { Badge } from "../components/Badge";
 import { LowStockModal } from "../components/LowStockModal";
 
-type StatusFilter = "all" | "working" | "reserved" | "paused" | "completed";
+type StatusFilter = "all" | "working" | "reserved" | "paused" | "completed" | "cancelled";
 type ProposalFilter = "all" | "special" | "noSpecial";
 type ReserveState = "idle" | "working" | "reserved" | "completed";
 
 export function AllOrdersPage() {
   const [orders, setOrders]       = useState<Order[]>([]);
   const [products, setProducts]   = useState<Product[]>([]);
+  const [inventories, setInventories] = useState<WarehouseInventory[]>([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -29,8 +29,12 @@ export function AllOrdersPage() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    Promise.all([ordersApi.getAll(), productsApi.getAll(), warehousesApi.getAll()])
-      .then(([o, p]) => { setOrders(o || []); setProducts(p || []); })
+    Promise.all([ordersApi.getAll(), productsApi.getAll(), warehouseInventoryApi.getAll()])
+      .then(([o, p, inv]) => {
+        setOrders(o || []);
+        setProducts(p || []);
+        setInventories(inv || []);
+      })
       .catch(() => setError("Nepavyko įkelti užsakymų"))
       .finally(() => setLoading(false));
   }, []);
@@ -47,6 +51,27 @@ export function AllOrdersPage() {
   }, []);
 
   const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
+  const totalQuantityByProductId = inventories.reduce<Record<string, number>>((acc, inv) => {
+    acc[inv.productId] = (acc[inv.productId] ?? 0) + inv.quantityCurrent;
+    return acc;
+  }, {});
+
+  const systemCategoryLabel = (category: SystemCategory | null | undefined) => {
+    if (category === SystemCategory.Ground) return "Zemes";
+    if (category === SystemCategory.FlatRoof) return "Plokščio stogo";
+    if (category === SystemCategory.SlopedRoof) return "Šlaitinio stogo";
+  };
+
+  const getOrderSystemCategoryLabel = (order: Order) => {
+    const categories = Array.from(new Set(
+      (order.items ?? [])
+        .map((item) => productMap[item.productId]?.systemCategory)
+        .filter((category): category is SystemCategory => category != null),
+    ));
+
+    if (categories.length === 1) return systemCategoryLabel(categories[0]);
+    return categories.map((category) => systemCategoryLabel(category));
+  };
 
   const setOrderReserveState = (orderId: string, state: ReserveState) =>
     setReserveStates((prev) => ({ ...prev, [orderId]: state }));
@@ -116,6 +141,32 @@ export function AllOrdersPage() {
     }
   };
 
+  const handleDelete = async (order: Order, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpenMenu(null);
+    const shouldDelete = window.confirm("Ar tikrai norite ištrinti šį užsakymą?");
+    if (!shouldDelete) return;
+    try {
+      await ordersApi.delete(order.id);
+      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+    } catch {
+      setReserveError("Nepavyko ištrinti užsakymo.");
+    }
+  };
+
+  const handleCancel = async (order: Order, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpenMenu(null);
+    try {
+      await ordersApi.updateStatus(order.id, "CANCELLED");
+        setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: "CANCELLED" } : o));
+    } catch {
+      setReserveError("Nepavyko atšaukti užsakymo.");
+    }
+  };
+
+
+
   const handleModalConfirm = async () => {
     if (!modalOrder) return;
     const order = modalOrder;
@@ -156,13 +207,15 @@ export function AllOrdersPage() {
     }
   };
 
-  const statusVariant = (status: string | null): "green" | "yellow" | "blue" | "gray" => {
+  const statusVariant = (status: string | null): "green" | "yellow" | "blue" | "gray" | "red" => {
     if (!status) return "gray";
     const s = status.toLowerCase();
     if (s.includes("complete")) return "green";
     if (s.includes("reserved")) return "blue";
     if (s.includes("pend"))     return "yellow";
     if (s.includes("pause"))    return "gray";
+    if (s.includes("cancel") ) return "red";
+    if(s.includes("delet")) return "red";
     return "blue";
   };
 
@@ -173,12 +226,14 @@ export function AllOrdersPage() {
     if (s.includes("reserved")) return "Rezervuotas";
     if (s.includes("pend"))     return "Laukiama";
     if (s.includes("pause"))    return "Sustabdytas";
+    if (s.includes("cancel") ) return "Atšauktas";
+    if(s.includes("delet")) return "Ištrintas";
     return status;
   };
 
   const proposalLabel = (orderType: OrderType | null) => {
     if (orderType === OrderType.SpecialOffer)   return "Nori pasiūlymo";
-    if (orderType === OrderType.NoSpecialOffer) return "Standartinis";
+    if (orderType === OrderType.NoSpecialOffer) return "Nenori pasiūlymo";
     return "—";
   };
 
@@ -193,7 +248,8 @@ export function AllOrdersPage() {
       (statusFilter === "working"   && rs === "working") ||
       (statusFilter === "reserved"  && (rs === "reserved" || s.includes("reserved"))) ||
       (statusFilter === "paused"    && s.includes("pause")) ||
-      (statusFilter === "completed" && (s.includes("complete") || rs === "completed"));
+      (statusFilter === "completed" && (s.includes("complete") || rs === "completed")) ||
+      (statusFilter === "cancelled" && (s.includes("cancel")));
     const matchProposal =
       proposalFilter === "all" ||
       (proposalFilter === "special"   && o.orderType === OrderType.SpecialOffer) ||
@@ -210,6 +266,10 @@ export function AllOrdersPage() {
   });
 
   const pendingCount   = orders.filter((o) => o.status?.toLowerCase().includes("pend")).length;
+  const cancelledCount = orders.filter((o) => {
+    const s = o.status?.toLowerCase() ?? "";
+    return s.includes("cancel") ;
+  }).length;
   const completedCount = orders.filter((o) => o.status?.toLowerCase().includes("complete")).length;
   const specialCount   = orders.filter((o) => o.orderType === OrderType.SpecialOffer).length;
 
@@ -225,6 +285,7 @@ export function AllOrdersPage() {
         <SummaryCard label="Visi užsakymai" value={orders.length}  color="var(--brand)" />
         <SummaryCard label="Laukiami"       value={pendingCount}   color="#d97706" />
         <SummaryCard label="Užbaigti"       value={completedCount} color="var(--success)" />
+        <SummaryCard label="Atšaukti"       value={cancelledCount} color="#ef4444" />
         <SummaryCard label="Nori pasiūlymo" value={specialCount}   color="#6366f1" />
       </div>
 
@@ -242,6 +303,7 @@ export function AllOrdersPage() {
             { key: "reserved",  label: "Rezervuoti" },
             { key: "paused",    label: "Sustabdyti" },
             { key: "completed", label: "Užbaigti" },
+            { key: "cancelled", label: "Atšaukti" },
           ] as { key: StatusFilter; label: string }[]).map(({ key, label }) => (
             <button key={key} onClick={() => setStatusFilter(key)}
               className={`btn btn-sm ${statusFilter === key ? "btn-primary" : "btn-secondary"}`}>
@@ -253,7 +315,7 @@ export function AllOrdersPage() {
           {(["all", "special", "noSpecial"] as ProposalFilter[]).map((f) => (
             <button key={f} onClick={() => setProposalFilter(f)}
               className={`btn btn-sm ${proposalFilter === f ? "btn-primary" : "btn-secondary"}`}>
-              {f === "all" ? "Visi pasiūlymai" : f === "special" ? "Nori pasiūlymo" : "Standartiniai"}
+              {f === "all" ? "Visi pasiūlymai" : f === "special" ? "Nori pasiūlymo" : "Nenori pasiūlymo"}
             </button>
           ))}
         </div>
@@ -285,6 +347,7 @@ export function AllOrdersPage() {
               <col style={{ width: 165 }} />
               <col style={{ width: 110 }} />
               <col style={{ width: 120 }} />
+              <col style={{ width: 100 }} />
               <col style={{ width: 50 }} />
               <col style={{ width: 60 }} />
             </colgroup>
@@ -296,6 +359,7 @@ export function AllOrdersPage() {
                 <th style={th()}>El. paštas / Tel.</th>
                 <th style={th()}>Statusas</th>
                 <th style={th()}>Pasiūlymas</th>
+                <th style={th()}>Sistema</th>
                 <th style={th("center")}>Prekės</th>
                 <th style={th("center")}>Veiksmai</th>
               </tr>
@@ -308,6 +372,10 @@ export function AllOrdersPage() {
                 const isDbReserved = order.status?.toLowerCase().includes("reserved");
                 const isPaused     = order.status?.toLowerCase().includes("pause");
                 const isPending    = order.status?.toLowerCase().includes("pend");
+                const isCancelled  = (
+                  order.status?.toLowerCase().includes("cancel") ||
+                  order.status?.toLowerCase().includes("delet")
+                );
                 const reserveState = reserveStates[order.id] ?? "idle";
                 const isWorking    = reserveState === "working";
                 const isReserved   = reserveState === "reserved" || isDbReserved;
@@ -380,6 +448,11 @@ export function AllOrdersPage() {
                         <Badge variant={proposalVariant(order.orderType)}>{proposalLabel(order.orderType)}</Badge>
                       </td>
 
+                      {/* System type */}
+                      <td style={td()}>
+                        <Badge variant="gray">{getOrderSystemCategoryLabel(order)}</Badge>
+                      </td>
+
                       {/* Item count */}
                       <td style={{ ...td(), textAlign: "center" }}>
                         <span style={{ display: "inline-block", minWidth: 24, padding: "2px 8px", background: "var(--surface-2)", borderRadius: 99, fontWeight: 700, fontSize: 12 }}>
@@ -407,7 +480,7 @@ export function AllOrdersPage() {
                               minWidth: 190, padding: "4px 0",
                             }}>
                               {/* Reserve — only for PENDING */}
-                              {(isPending || (!isReserved && !isPaused && !isCompleted)) && (
+                              {((isPending || (!isReserved && !isPaused && !isCompleted ))) && !isCancelled && (
                                 <MenuItem
                                   icon="pi pi-check-circle"
                                   label={isWorking ? "Rezervuojama…" : "Rezervuoti"}
@@ -437,8 +510,28 @@ export function AllOrdersPage() {
                                 />
                               )}
 
+                              {/* Cancel  */}
+                              {(!isCompleted && !isCancelled) && (
+                                <MenuItem
+                                  icon="pi pi-pause"
+                                  label="Atšaukti"
+                                  color="#64748b"
+                                  onClick={(e) => handleCancel(order, e)}
+                                />
+                              )}
+
+                              {/* Delete  */}
+                              {(!isCompleted &&
+                                <MenuItem
+                                  icon="pi pi-pause"
+                                  label="Ištrinti"
+                                  color="#64748b"
+                                  onClick={(e) => handleDelete(order, e)}
+                                />
+                              )}
+
                               {/* Resume — only for PAUSED */}
-                              {isPaused && (
+                              {(isPaused || isCancelled) && (
                                 <MenuItem
                                   icon="pi pi-play"
                                   label="Pratęsti"
@@ -481,7 +574,7 @@ export function AllOrdersPage() {
                     {/* Expanded items sub-table */}
                     {expanded && (
                       <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                        <td colSpan={8} style={{ padding: 0, background: "#f5f7ff", textAlign: "left" }}>
+                        <td colSpan={9} style={{ padding: 0, background: "#f5f7ff", textAlign: "left" }}>
                           <div style={{ paddingLeft: 40 }}>
                             {!itemCount ? (
                               <div style={{ padding: "12px 16px", color: "var(--text-3)", fontStyle: "italic", fontSize: 13 }}>Nėra prekių</div>
@@ -494,7 +587,7 @@ export function AllOrdersPage() {
                                 <thead>
                                   <tr style={{ borderBottom: "1px solid var(--border)" }}>
                                     <th style={th()}>Produktas</th><th style={th()}>Kodas</th>
-                                    <th style={th("center")}>Kiekis</th><th style={th("right")}>Vnt. kaina</th><th style={th("right")}>Suma</th>
+                                    <th style={th("center")}>BENDRAS KIEKIS</th><th style={th("center")}>Kiekis</th><th style={th("right")}>Vnt. kaina</th><th style={th("right")}>Suma</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -505,6 +598,7 @@ export function AllOrdersPage() {
                                       <tr key={idx} style={{ borderBottom: "1px solid var(--border)" }}>
                                         <td style={td()}><span style={{ fontWeight: 500 }}>{prod?.name || <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-3)" }}>{item.productId.slice(0, 8)}…</span>}</span></td>
                                         <td style={td()}><span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-2)" }}>{prod?.sku || "—"}</span></td>
+                                        <td style={{ ...td(), textAlign: "center" }}><span style={{ fontWeight: 700 }}>{totalQuantityByProductId[item.productId]}</span></td>
                                         <td style={{ ...td(), textAlign: "center" }}><span style={{ fontWeight: 700 }}>×{item.quantity}</span></td>
                                         <td style={{ ...td(), textAlign: "right", color: "var(--text-2)" }}>{prod?.price != null ? `${prod.price.toFixed(2)} €` : "—"}</td>
                                         <td style={{ ...td(), textAlign: "right", fontWeight: 700 }}>{lineTotal > 0 ? `${lineTotal.toFixed(2)} €` : "—"}</td>
@@ -589,7 +683,7 @@ function SummaryCard({ label, value, color }: { label: string; value: number; co
 }
 
 function th(align: "left" | "center" | "right" = "left"): CSSProperties {
-  return { padding: "9px 12px", textAlign: align, fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" };
+  return { padding: "9px 10px", textAlign: align, fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" };
 }
 
 function td(): CSSProperties {

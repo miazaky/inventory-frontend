@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { ordersApi } from "../api/orders";
 import { productsApi } from "../api/products";
 import { warehouseInventoryApi } from "../api/warehouseInventory";
-import type { Product, CreateProductCommand, UpdateProductCommand, WarehouseInventory } from "../types";
+import type { Order, Product, CreateProductCommand, UpdateProductCommand, WarehouseInventory } from "../types";
 import { Modal } from "../components/Modal";
 
 interface ProductFormData {
@@ -16,11 +17,13 @@ const emptyForm: ProductFormData = { sku: "", name: "", length: "", price: "" };
 function ProductRow({
   product,
   invs,
+  reservedQty,
   onSaved,
   onDelete,
 }: {
   product: Product;
   invs: WarehouseInventory[];
+  reservedQty: number;
   onSaved: () => void;
   onDelete: (p: Product) => void;
 }) {
@@ -123,6 +126,11 @@ function ProductRow({
           <td>
             <input className="input input-inline" type="number" step="0.01" value={form.price} onChange={set("price")} placeholder="0.00" style={{ width: 100 }} />
           </td>
+          <td style={{ textAlign: "center" }}>
+            <span style={{ fontWeight: 700, color: reservedQty > 0 ? "#0ea5e9" : "var(--text-3)" }}>
+              {reservedQty > 0 ? reservedQty : "—"}
+            </span>
+          </td>
           <td>
             <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
               <button onClick={handleSave} disabled={saving || !form.name} className="btn btn-primary btn-sm">
@@ -134,7 +142,7 @@ function ProductRow({
         </tr>
         {error && (
           <tr>
-            <td colSpan={6}>
+            <td colSpan={7}>
               <div className="alert alert-error" style={{ margin: "4px 0", padding: "6px 10px", fontSize: 12 }}>⚠ {error}</div>
             </td>
           </tr>
@@ -150,6 +158,11 @@ function ProductRow({
       <td>{product.length != null ? `${product.length} cm` : "—"}</td>
       <td style={{ textAlign: "center", fontWeight: 700 }}>{totalQty > 0 ? totalQty : <span style={{ color: "var(--text-3)" }}>—</span>}</td>
       <td>{product.price != null ? `${product.price.toFixed(2)} €` : "—"}</td>
+      <td style={{ textAlign: "center" }}>
+        <span style={{ fontWeight: 700, color: reservedQty > 0 ? "#0ea5e9" : "var(--text-3)" }}>
+          {reservedQty > 0 ? reservedQty : "—"}
+        </span>
+      </td>
       <td>
         <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
           <button onClick={() => setEditing(true)} className="btn btn-ghost btn-icon" title="Redaguoti">✏️</button>
@@ -163,6 +176,7 @@ function ProductRow({
 export function ProductsPage() {
   const [products,  setProducts]  = useState<Product[]>([]);
   const [inventory, setInventory] = useState<WarehouseInventory[]>([]);
+  const [orders,    setOrders]    = useState<Order[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState<string | null>(null);
   const [search,    setSearch]    = useState("");
@@ -174,12 +188,14 @@ export function ProductsPage() {
   const load = async () => {
     try {
       setLoading(true);
-      const [p, inv] = await Promise.all([
+      const [p, inv, ord] = await Promise.all([
         productsApi.getAll(),
         warehouseInventoryApi.getAll(),
+        ordersApi.getAll(),
       ]);
       setProducts(p  || []);
       setInventory(inv || []);
+      setOrders(ord || []);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load products");
     } finally {
@@ -194,6 +210,15 @@ export function ProductsPage() {
     if (!invByProduct[inv.productId]) invByProduct[inv.productId] = [];
     invByProduct[inv.productId].push(inv);
   });
+
+  const reservedByProduct: Record<string, number> = {};
+  orders
+    .filter((order) => order.status?.toLowerCase().includes("reserved"))
+    .forEach((order) => {
+      (order.items ?? []).forEach((item) => {
+        reservedByProduct[item.productId] = (reservedByProduct[item.productId] ?? 0) + item.quantity;
+      });
+    });
 
   const handleCreate = async () => {
     setSaving(true);
@@ -265,20 +290,22 @@ export function ProductsPage() {
               <th>Ilgis</th>
               <th style={{ textAlign: "center" }}>Kiekis</th>
               <th>Kaina</th>
+              <th style={{ textAlign: "center" }}>Rezervuota</th>
               <th style={{ textAlign: "center" }}>Veiksmai</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="td-loading">Kraunama...</td></tr>
+              <tr><td colSpan={7} className="td-loading">Kraunama...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={6} className="td-empty">Produktų nerasta.</td></tr>
+              <tr><td colSpan={7} className="td-empty">Produktų nerasta.</td></tr>
             ) : (
               filtered.map((p) => (
                 <ProductRow
                   key={p.id}
                   product={p}
                   invs={invByProduct[p.id] ?? []}
+                  reservedQty={reservedByProduct[p.id] ?? 0}
                   onSaved={load}
                   onDelete={setDeleting}
                 />

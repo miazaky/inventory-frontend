@@ -142,7 +142,24 @@ export interface Order {
   orderType: OrderType | null;
   pdfUrl: string | null;
   user: User | null;
-  items: OrderItem[] | null;
+  items?: OrderItem[] | null;
+
+  groupedItems?: OrderGroupedItemsGroup[] | null;
+}
+
+export interface OrderGroupedItemsGroup {
+  groupId: string;
+  groupName: string;
+  items: OrderGroupedItem[];
+}
+
+export interface OrderGroupedItem {
+  productId: string;
+  sku: string | null;
+  name: string | null;
+  quantity: number;
+  length: number | null;
+  description: string | null;
 }
 
 export interface OrderItem {
@@ -170,6 +187,7 @@ export const GROUND_MATERIAL_SORT_ORDER = [
   "k-1",
   "k-2",
   "grebestas 41x41",
+  "r-1",
   "r-2",
   "gg-0",
   "gg-1",
@@ -227,7 +245,7 @@ export const FLAT_ROOF_MATERIAL_SORT_ORDER = [
   "rv10-1(p)",
   "rv10-2(p)",
   "rv10-z",
-  "vejalente",
+  "VEJ2000",
   "lovys balastui",
   "padukai balastui",
   "uzdylimo ploksteles 300x300",
@@ -247,7 +265,7 @@ export const SLOPED_ROOF_MATERIAL_SORT_ORDER = [
   "begelis su epdm guma 80",
   "begelis su epdm guma mini",
   "kvadratinio begelio jungtis",
-  "kvadratinio begelio past uzbaigimas",
+  "KvBeEND",
   "smeiges 180",
   "spaustukas valcuotai skardai",
   "kabliai cerpiniam stogui",

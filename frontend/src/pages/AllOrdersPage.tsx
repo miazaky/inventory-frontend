@@ -2,10 +2,11 @@ import { useEffect, useState, Fragment, useRef, type CSSProperties } from "react
 import { ordersApi } from "../api/orders";
 import { productsApi } from "../api/products";
 import { warehouseInventoryApi } from "../api/warehouseInventory";
-import type { Order, Product, WarehouseInventory } from "../types";
+import type { Order, Product, WarehouseInventory, OrderGroupedItem, OrderItem } from "../types";
 import { OrderType, SystemCategory } from "../types";
 import { Badge } from "../components/Badge";
 import { LowStockModal } from "../components/LowStockModal";
+import { GROUND_MATERIAL_SORT_ORDER, FLAT_ROOF_MATERIAL_SORT_ORDER, SLOPED_ROOF_MATERIAL_SORT_ORDER } from "../types";
 
 type StatusFilter = "all" | "working" | "reserved" | "paused" | "completed" | "cancelled";
 type ProposalFilter = "all" | "special" | "noSpecial";
@@ -18,6 +19,7 @@ export function AllOrdersPage() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(new Set());
   const [search, setSearch]       = useState("");
   const [statusFilter, setStatusFilter]   = useState<StatusFilter>("all");
   const [proposalFilter, setProposalFilter] = useState<ProposalFilter>("all");
@@ -60,15 +62,51 @@ export function AllOrdersPage() {
     if (category === SystemCategory.Ground) return "Zemes";
     if (category === SystemCategory.FlatRoof) return "Plokščio stogo";
     if (category === SystemCategory.SlopedRoof) return "Šlaitinio stogo";
+    if (category === SystemCategory.Shared) return "Bendri";
+    return "Nepriskirti";
   };
+
+  const systemCategoryOrder = (category: SystemCategory | null | undefined) => {
+    if (category === SystemCategory.Ground) return 0;
+    if (category === SystemCategory.FlatRoof) return 1;
+    if (category === SystemCategory.SlopedRoof) return 2;
+    if (category === SystemCategory.Shared) return 3;
+    return 4;
+  };
+
+  const normalizeSortText = (value: string | null | undefined) =>
+    (value ?? "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+  const getMaterialSortIndex = (product: Product | undefined, sortOrder: string[]) => {
+    if (!product) return Number.MAX_SAFE_INTEGER;
+    const text = normalizeSortText([product.sku, product.name, product.length?.toString()].filter(Boolean).join(" "));
+    const matchedIndex = sortOrder.findIndex((pattern) => text.includes(normalizeSortText(pattern)));
+    return matchedIndex === -1 ? Number.MAX_SAFE_INTEGER : matchedIndex;
+  };
+
+  const getSortIndex = (product: Product | undefined, category: SystemCategory | null | undefined) => {
+    if (category === SystemCategory.Ground) return getMaterialSortIndex(product, GROUND_MATERIAL_SORT_ORDER);
+    if (category === SystemCategory.FlatRoof) return getMaterialSortIndex(product, FLAT_ROOF_MATERIAL_SORT_ORDER);
+    if (category === SystemCategory.SlopedRoof) return getMaterialSortIndex(product, SLOPED_ROOF_MATERIAL_SORT_ORDER);
+    return Number.MAX_SAFE_INTEGER;
+  };
+
+  const isVisibleSystemCategory = (category: SystemCategory | null | undefined): category is SystemCategory =>
+    category === SystemCategory.Ground ||
+    category === SystemCategory.FlatRoof ||
+    category === SystemCategory.SlopedRoof;
 
   const getOrderSystemCategoryLabel = (order: Order) => {
     const categories = Array.from(new Set(
       (order.items ?? [])
         .map((item) => productMap[item.productId]?.systemCategory)
-        .filter((category): category is SystemCategory => category != null),
+        .filter(isVisibleSystemCategory),
     ));
 
+    if (categories.length === 0) return "—";
     if (categories.length === 1) return systemCategoryLabel(categories[0]);
     return categories.map((category) => systemCategoryLabel(category));
   };
@@ -84,16 +122,60 @@ export function AllOrdersPage() {
     });
   };
 
+  const toggleGroupExpand = (orderId: string, groupId: string) => {
+    const key = `${orderId}::${groupId}`;
+    setExpandedGroupKeys((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const getOrderLineItems = (order: Order): OrderItem[] => {
+    if (order.items?.length) return order.items;
+    const grouped = order.groupedItems ?? [];
+    return grouped.flatMap((g) => (g.items ?? []).map((i) => ({ productId: i.productId, quantity: i.quantity })));
+  };
+
+  const sumQuantitiesByProductId = (items: OrderItem[]) =>
+    items.reduce<Record<string, number>>((acc, item) => {
+      acc[item.productId] = (acc[item.productId] ?? 0) + item.quantity;
+      return acc;
+    }, {});
+
+  const aggregateGroupItemsBySku = (items: OrderGroupedItem[]) => {
+    const acc = new Map<string, OrderGroupedItem>();
+    for (const item of items) {
+      const key = (item.sku ?? item.productId).toLowerCase();
+      const existing = acc.get(key);
+      if (!existing) {
+        acc.set(key, { ...item });
+      } else {
+        acc.set(key, {
+          ...existing,
+          quantity: existing.quantity + item.quantity,
+          name: existing.name ?? item.name,
+          sku: existing.sku ?? item.sku,
+          length: existing.length ?? item.length,
+          description: existing.description ?? item.description,
+        });
+      }
+    }
+    return Array.from(acc.values());
+  };
+
   const handleReserveClick = async (order: Order, e: React.MouseEvent) => {
     e.stopPropagation();
     setOpenMenu(null);
     setReserveError(null);
     try {
       const lowStock = await warehouseInventoryApi.getLowStock();
-      const orderProductIds = new Set((order.items ?? []).map((i) => i.productId));
+      const orderItems = getOrderLineItems(order);
+      const requiredByProductId = sumQuantitiesByProductId(orderItems);
+      const orderProductIds = new Set(Object.keys(requiredByProductId));
       const problematic = lowStock.filter((inv) => {
         if (!orderProductIds.has(inv.productId)) return false;
-        const required = order.items?.find((i) => i.productId === inv.productId)?.quantity ?? 0;
+        const required = requiredByProductId[inv.productId] ?? 0;
         return inv.quantityCurrent < required;
       });
       if (problematic.length > 0) {
@@ -367,7 +449,10 @@ export function AllOrdersPage() {
             <tbody>
               {filtered.map((order) => {
                 const expanded     = expandedIds.has(order.id);
-                const itemCount    = order.items?.length ?? 0;
+                const itemCount =
+                  order.groupedItems?.length
+                    ? order.groupedItems.reduce((sum, g) => sum + aggregateGroupItemsBySku(g.items ?? []).length, 0)
+                    : (order.items?.length ?? 0);
                 const isCompleted  = order.status?.toLowerCase().includes("complete");
                 const isDbReserved = order.status?.toLowerCase().includes("reserved");
                 const isPaused     = order.status?.toLowerCase().includes("pause");
@@ -382,10 +467,43 @@ export function AllOrdersPage() {
                 const isSpecial    = order.orderType === OrderType.SpecialOffer;
                 const menuOpen     = openMenu === order.id;
 
-                const total = order.items?.reduce((sum, item) => {
+                const orderLineItems = getOrderLineItems(order);
+                const total = orderLineItems.reduce((sum, item) => {
                   const price = productMap[item.productId]?.price ?? 0;
                   return sum + price * item.quantity;
-                }, 0) ?? 0;
+                }, 0);
+
+                const flatLineItems = order.items?.length ? order.items : getOrderLineItems(order);
+
+                const groupedWithAggregates = (order.groupedItems ?? []).map((group) => ({
+                  group,
+                  aggregated: aggregateGroupItemsBySku(group.items ?? []),
+                }));
+                const hasMultiLineGroup = groupedWithAggregates.some(({ aggregated }) => aggregated.length > 1);
+                const multiLineGroups = groupedWithAggregates.filter(({ aggregated }) => aggregated.length > 1);
+                const singleLineItems = groupedWithAggregates
+                  .filter(({ aggregated }) => aggregated.length === 1)
+                  .map(({ aggregated }) => aggregated[0]);
+
+                const sortedLineItems = flatLineItems
+                  .map((item) => ({
+                    item,
+                    product: productMap[item.productId],
+                    category: productMap[item.productId]?.systemCategory ?? null,
+                  }))
+                  .sort((a, b) => {
+                    const categoryDiff = systemCategoryOrder(a.category) - systemCategoryOrder(b.category);
+                    if (categoryDiff !== 0) return categoryDiff;
+
+                    const excelDiff = getSortIndex(a.product, a.category) - getSortIndex(b.product, b.category);
+                    if (excelDiff !== 0) return excelDiff;
+
+                    return (
+                      (a.product?.sku ?? "").localeCompare(b.product?.sku ?? "") ||
+                      (a.product?.name ?? "").localeCompare(b.product?.name ?? "") ||
+                      a.item.productId.localeCompare(b.item.productId)
+                    );
+                  });
 
                 return (
                   <Fragment key={order.id}>
@@ -578,27 +696,208 @@ export function AllOrdersPage() {
                           <div style={{ paddingLeft: 40 }}>
                             {!itemCount ? (
                               <div style={{ padding: "12px 16px", color: "var(--text-3)", fontStyle: "italic", fontSize: 13 }}>Nėra prekių</div>
+                            ) : groupedWithAggregates.length > 0 && itemCount > 1 && hasMultiLineGroup ? (
+                              <div style={{ padding: "10px 10px 14px" }}>
+                                {multiLineGroups.map(({ group, aggregated }) => {
+                                  const groupKey = `${order.id}::${group.groupId}`;
+                                  const groupOpen = expandedGroupKeys.has(groupKey);
+                                  const groupTotal = aggregated.reduce((sum, item) => {
+                                    const price = productMap[item.productId]?.price ?? 0;
+                                    return sum + price * item.quantity;
+                                  }, 0);
+
+                                  return (
+                                    <div key={groupKey} style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", background: "var(--surface)", marginBottom: 10 }}>
+                                      <button
+                                        onClick={() => toggleGroupExpand(order.id, group.groupId)}
+                                        style={{
+                                          display: "flex",
+                                          width: "100%",
+                                          alignItems: "center",
+                                          justifyContent: "space-between",
+                                          padding: "10px 12px",
+                                          border: "none",
+                                          background: "var(--surface-2)",
+                                          cursor: "pointer",
+                                        }}
+                                      >
+                                        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                                          <span style={{
+                                            display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                            width: 20, height: 20, borderRadius: 4,
+                                            background: groupOpen ? "var(--brand)" : "var(--surface)",
+                                            color: groupOpen ? "#fff" : "var(--text-3)",
+                                            fontSize: 10, fontWeight: 700,
+                                          }}>
+                                            {groupOpen ? "▾" : "▸"}
+                                          </span>
+                                          <div style={{ fontWeight: 700, color: "var(--text-1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                            {group.groupName || group.groupId}
+                                          </div>
+                                          <span style={{ fontSize: 12, color: "var(--text-3)" }}>
+                                            ({aggregated.length} eil.)
+                                          </span>
+                                        </div>
+
+                                        <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text-2)" }}>
+                                          {groupTotal > 0 ? `${groupTotal.toFixed(2)} €` : ""}
+                                        </div>
+                                      </button>
+
+                                      {groupOpen && (
+                                        <div style={{ padding: "10px 12px" }}>
+                                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
+                                            <colgroup>
+                                              <col style={{ width: 300 }} />
+                                              <col style={{ width: 200 }} />
+                                              <col style={{ width: 110 }} />
+                                              <col style={{ width: 60 }} />
+                                              <col style={{ width: 90 }} />
+                                              <col style={{ width: 90 }} />
+                                            </colgroup>
+                                            <thead>
+                                              <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                                                <th style={th()}>Produktas</th>
+                                                <th style={th()}>Kodas</th>
+                                                <th style={th("center")}>BENDRAS KIEKIS</th>
+                                                <th style={th("center")}>Kiekis</th>
+                                                <th style={th("right")}>Vnt. kaina</th>
+                                                <th style={th("right")}>Suma</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {aggregated.map((item, idx) => {
+                                                const price = productMap[item.productId]?.price ?? 0;
+                                                const lineTotal = price * item.quantity;
+                                                return (
+                                                  <tr key={`${item.productId}-${item.sku ?? ""}-${idx}`} style={{ borderBottom: "1px solid var(--border)" }}>
+                                                    <td style={td()}>
+                                                      <span style={{ fontWeight: 500 }}>
+                                                        {item.name || productMap[item.productId]?.name || (
+                                                          <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-3)" }}>{item.productId.slice(0, 8)}…</span>
+                                                        )}
+                                                      </span>
+                                                    </td>
+                                                    <td style={td()}>
+                                                      <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-2)" }}>
+                                                        {item.sku || productMap[item.productId]?.sku || "—"}
+                                                      </span>
+                                                    </td>
+                                                    <td style={{ ...td(), textAlign: "center" }}>
+                                                      <span style={{
+                                                        fontWeight: 700,
+                                                        color: (totalQuantityByProductId[item.productId] ?? 0) < item.quantity ? "var(--danger)" : "var(--text-1)",
+                                                      }}>
+                                                        {totalQuantityByProductId[item.productId] ?? 0}
+                                                      </span>
+                                                    </td>
+                                                    <td style={{ ...td(), textAlign: "center" }}><span style={{ fontWeight: 700 }}>×{item.quantity}</span></td>
+                                                    <td style={{ ...td(), textAlign: "right", color: "var(--text-2)" }}>{price ? `${price.toFixed(2)} €` : "—"}</td>
+                                                    <td style={{ ...td(), textAlign: "right", fontWeight: 700 }}>{lineTotal > 0 ? `${lineTotal.toFixed(2)} €` : "—"}</td>
+                                                  </tr>
+                                                );
+                                              })}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                                {singleLineItems.length > 0 && (
+                                  <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", background: "var(--surface)", marginBottom: 10 }}>
+                                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
+                                      <colgroup>
+                                        <col style={{ width: 300 }} />
+                                        <col style={{ width: 200 }} />
+                                        <col style={{ width: 110 }} />
+                                        <col style={{ width: 60 }} />
+                                        <col style={{ width: 90 }} />
+                                        <col style={{ width: 90 }} />
+                                      </colgroup>
+                                      <thead>
+                                        <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                                          <th style={th()}>Produktas</th>
+                                          <th style={th()}>Kodas</th>
+                                          <th style={th("center")}>BENDRAS KIEKIS</th>
+                                          <th style={th("center")}>Kiekis</th>
+                                          <th style={th("right")}>Vnt. kaina</th>
+                                          <th style={th("right")}>Suma</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {singleLineItems.map((item, idx) => {
+                                          const price = productMap[item.productId]?.price ?? 0;
+                                          const lineTotal = price * item.quantity;
+                                          return (
+                                            <tr key={`single-${item.productId}-${item.sku ?? ""}-${idx}`} style={{ borderBottom: "1px solid var(--border)" }}>
+                                              <td style={td()}>
+                                                <span style={{ fontWeight: 500 }}>
+                                                  {item.name || productMap[item.productId]?.name || (
+                                                    <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-3)" }}>{item.productId.slice(0, 8)}…</span>
+                                                  )}
+                                                </span>
+                                              </td>
+                                              <td style={td()}>
+                                                <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-2)" }}>
+                                                  {item.sku || productMap[item.productId]?.sku || "—"}
+                                                </span>
+                                              </td>
+                                              <td style={{ ...td(), textAlign: "center" }}>
+                                                <span style={{
+                                                  fontWeight: 700,
+                                                  color: (totalQuantityByProductId[item.productId] ?? 0) < item.quantity ? "var(--danger)" : "var(--text-1)",
+                                                }}>
+                                                  {totalQuantityByProductId[item.productId] ?? 0}
+                                                </span>
+                                              </td>
+                                              <td style={{ ...td(), textAlign: "center" }}><span style={{ fontWeight: 700 }}>×{item.quantity}</span></td>
+                                              <td style={{ ...td(), textAlign: "right", color: "var(--text-2)" }}>{price ? `${price.toFixed(2)} €` : "—"}</td>
+                                              <td style={{ ...td(), textAlign: "right", fontWeight: 700 }}>{lineTotal > 0 ? `${lineTotal.toFixed(2)} €` : "—"}</td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+
+                                {total > 0 && (
+                                  <div style={{ display: "flex", justifyContent: "flex-end", padding: "6px 4px 0" }}>
+                                    <div style={{ fontWeight: 600, color: "var(--text-2)", marginRight: 10 }}>Iš viso:</div>
+                                    <div style={{ fontWeight: 900, color: "var(--text-1)", fontSize: 14 }}>{total.toFixed(2)} €</div>
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
                                 <colgroup>
-                                  <col style={{ width: 300 }} /><col style={{ width: 200 }} />
-                                  <col style={{ width: 110 }} /><col style={{ width: 60 }} /><col style={{ width: 90 }} />
+                                  <col style={{ width: 300 }} />
+                                  <col style={{ width: 200 }} />
+                                  <col style={{ width: 110 }} />
+                                  <col style={{ width: 60 }} />
+                                  <col style={{ width: 90 }} />
+                                  <col style={{ width: 90 }} />
                                 </colgroup>
                                 <thead>
                                   <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                                    <th style={th()}>Produktas</th><th style={th()}>Kodas</th>
-                                    <th style={th("center")}>BENDRAS KIEKIS</th><th style={th("center")}>Kiekis</th><th style={th("right")}>Vnt. kaina</th><th style={th("right")}>Suma</th>
+                                    <th style={th()}>Produktas</th>
+                                    <th style={th()}>Kodas</th>
+                                    <th style={th("center")}>BENDRAS KIEKIS</th>
+                                    <th style={th("center")}>Kiekis</th>
+                                    <th style={th("right")}>Vnt. kaina</th>
+                                    <th style={th("right")}>Suma</th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {order.items!.map((item, idx) => {
-                                    const prod = productMap[item.productId];
+                                  {sortedLineItems.map(({ item, product: prod }, idx) => {
                                     const lineTotal = (prod?.price ?? 0) * item.quantity;
                                     return (
-                                      <tr key={idx} style={{ borderBottom: "1px solid var(--border)" }}>
+                                      <tr key={`${item.productId}-${idx}`} style={{ borderBottom: "1px solid var(--border)" }}>
                                         <td style={td()}><span style={{ fontWeight: 500 }}>{prod?.name || <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-3)" }}>{item.productId.slice(0, 8)}…</span>}</span></td>
                                         <td style={td()}><span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-2)" }}>{prod?.sku || "—"}</span></td>
-                                        <td style={{ ...td(), textAlign: "center" }}><span style={{ fontWeight: 700 }}>{totalQuantityByProductId[item.productId]}</span></td>
+                                        <td style={{ ...td(), textAlign: "center" }}><span style={{ fontWeight: 700, color: totalQuantityByProductId[item.productId] < item.quantity ? "var(--danger)" : "var(--text-1)" }}>{totalQuantityByProductId[item.productId]}</span></td>
                                         <td style={{ ...td(), textAlign: "center" }}><span style={{ fontWeight: 700 }}>×{item.quantity}</span></td>
                                         <td style={{ ...td(), textAlign: "right", color: "var(--text-2)" }}>{prod?.price != null ? `${prod.price.toFixed(2)} €` : "—"}</td>
                                         <td style={{ ...td(), textAlign: "right", fontWeight: 700 }}>{lineTotal > 0 ? `${lineTotal.toFixed(2)} €` : "—"}</td>
@@ -607,7 +906,7 @@ export function AllOrdersPage() {
                                   })}
                                   {total > 0 && (
                                     <tr style={{ borderTop: "2px solid var(--border)" }}>
-                                      <td colSpan={4} style={{ ...td(), textAlign: "right", fontWeight: 600, color: "var(--text-2)" }}>Iš viso:</td>
+                                      <td colSpan={5} style={{ ...td(), textAlign: "right", fontWeight: 600, color: "var(--text-2)" }}>Iš viso:</td>
                                       <td style={{ ...td(), textAlign: "right", fontWeight: 800, fontSize: 14 }}>{total.toFixed(2)} €</td>
                                     </tr>
                                   )}

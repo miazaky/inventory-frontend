@@ -2,7 +2,7 @@ import { useEffect, useState, Fragment, useRef, type CSSProperties } from "react
 import { ordersApi } from "../api/orders";
 import { productsApi } from "../api/products";
 import { warehouseInventoryApi } from "../api/warehouseInventory";
-import type { Order, Product, WarehouseInventory, OrderGroupedItem, OrderItem } from "../types";
+import type { Order, Product, WarehouseInventory, OrderItem } from "../types";
 import { OrderType, SystemCategory } from "../types";
 import { Badge } from "../components/Badge";
 import { LowStockModal } from "../components/LowStockModal";
@@ -19,7 +19,6 @@ export function AllOrdersPage() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(new Set());
   const [search, setSearch]       = useState("");
   const [statusFilter, setStatusFilter]   = useState<StatusFilter>("all");
   const [proposalFilter, setProposalFilter] = useState<ProposalFilter>("all");
@@ -78,12 +77,29 @@ export function AllOrdersPage() {
     (value ?? "")
       .toLowerCase()
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "");
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+  const normalizeSortKey = (value: string | null | undefined) =>
+    normalizeSortText(value).replace(/\s+/g, "");
 
   const getMaterialSortIndex = (product: Product | undefined, sortOrder: string[]) => {
     if (!product) return Number.MAX_SAFE_INTEGER;
+
+    const skuKey = normalizeSortKey(product.sku);
+    if (skuKey) {
+      const skuMatchedIndex = sortOrder.findIndex((pattern) => normalizeSortKey(pattern) === skuKey);
+      if (skuMatchedIndex !== -1) return skuMatchedIndex;
+    }
+
     const text = normalizeSortText([product.sku, product.name, product.length?.toString()].filter(Boolean).join(" "));
-    const matchedIndex = sortOrder.findIndex((pattern) => text.includes(normalizeSortText(pattern)));
+    const textWords = new Set(text.split(" ").filter(Boolean));
+    const matchedIndex = sortOrder.findIndex((pattern) => {
+      const patternWords = normalizeSortText(pattern).split(" ").filter(Boolean);
+      if (!patternWords.length) return false;
+      return patternWords.every((word) => textWords.has(word));
+    });
     return matchedIndex === -1 ? Number.MAX_SAFE_INTEGER : matchedIndex;
   };
 
@@ -94,12 +110,47 @@ export function AllOrdersPage() {
     return Number.MAX_SAFE_INTEGER;
   };
 
+  const resolveOrderSortCategory = (items: OrderItem[]): SystemCategory | null => {
+    const counts: Record<number, number> = {};
+    for (const item of items) {
+      const category = productMap[item.productId]?.systemCategory;
+      if (
+        category === SystemCategory.Ground ||
+        category === SystemCategory.FlatRoof ||
+        category === SystemCategory.SlopedRoof
+      ) {
+        counts[category] = (counts[category] ?? 0) + 1;
+      }
+    }
+
+    const orderedCategories = [SystemCategory.FlatRoof, SystemCategory.Ground, SystemCategory.SlopedRoof] as const;
+    let best: SystemCategory | null = null;
+    let bestCount = -1;
+    for (const category of orderedCategories) {
+      const count = counts[category] ?? 0;
+      if (count > bestCount) {
+        bestCount = count;
+        best = category;
+      }
+    }
+    return bestCount > 0 ? best : null;
+  };
+
   const isVisibleSystemCategory = (category: SystemCategory | null | undefined): category is SystemCategory =>
     category === SystemCategory.Ground ||
     category === SystemCategory.FlatRoof ||
     category === SystemCategory.SlopedRoof;
 
   const getOrderSystemCategoryLabel = (order: Order) => {
+    const systemNames = Array.from(new Set(
+      (order.items ?? [])
+        .map((item) => item.systemName?.trim())
+        .filter((name): name is string => Boolean(name)),
+    ));
+
+    if (systemNames.length === 1) return systemNames[0];
+    if (systemNames.length > 1) return systemNames.join(" / ");
+
     const categories = Array.from(new Set(
       (order.items ?? [])
         .map((item) => productMap[item.productId]?.systemCategory)
@@ -122,15 +173,6 @@ export function AllOrdersPage() {
     });
   };
 
-  const toggleGroupExpand = (orderId: string, groupId: string) => {
-    const key = `${orderId}::${groupId}`;
-    setExpandedGroupKeys((prev) => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-  };
-
   const getOrderLineItems = (order: Order): OrderItem[] => {
     if (order.items?.length) return order.items;
     const grouped = order.groupedItems ?? [];
@@ -142,27 +184,6 @@ export function AllOrdersPage() {
       acc[item.productId] = (acc[item.productId] ?? 0) + item.quantity;
       return acc;
     }, {});
-
-  const aggregateGroupItemsBySku = (items: OrderGroupedItem[]) => {
-    const acc = new Map<string, OrderGroupedItem>();
-    for (const item of items) {
-      const key = (item.sku ?? item.productId).toLowerCase();
-      const existing = acc.get(key);
-      if (!existing) {
-        acc.set(key, { ...item });
-      } else {
-        acc.set(key, {
-          ...existing,
-          quantity: existing.quantity + item.quantity,
-          name: existing.name ?? item.name,
-          sku: existing.sku ?? item.sku,
-          length: existing.length ?? item.length,
-          description: existing.description ?? item.description,
-        });
-      }
-    }
-    return Array.from(acc.values());
-  };
 
   const handleReserveClick = async (order: Order, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -322,7 +343,9 @@ export function AllOrdersPage() {
   const proposalVariant = (orderType: OrderType | null): "blue" | "gray" =>
     orderType === OrderType.SpecialOffer ? "blue" : "gray";
 
-  const filtered = orders.filter((o) => {
+  const ordersWithSystem = orders.filter((o) => getOrderSystemCategoryLabel(o) !== "—");
+
+  const filtered = ordersWithSystem.filter((o) => {
     const s  = o.status?.toLowerCase() ?? "";
     const rs = reserveStates[o.id] ?? "idle";
     const matchStatus =
@@ -347,13 +370,13 @@ export function AllOrdersPage() {
     return matchStatus && matchProposal && matchSearch;
   });
 
-  const pendingCount   = orders.filter((o) => o.status?.toLowerCase().includes("pend")).length;
-  const cancelledCount = orders.filter((o) => {
+  const pendingCount   = ordersWithSystem.filter((o) => o.status?.toLowerCase().includes("pend")).length;
+  const cancelledCount = ordersWithSystem.filter((o) => {
     const s = o.status?.toLowerCase() ?? "";
     return s.includes("cancel") ;
   }).length;
-  const completedCount = orders.filter((o) => o.status?.toLowerCase().includes("complete")).length;
-  const specialCount   = orders.filter((o) => o.orderType === OrderType.SpecialOffer).length;
+  const completedCount = ordersWithSystem.filter((o) => o.status?.toLowerCase().includes("complete")).length;
+  const specialCount   = ordersWithSystem.filter((o) => o.orderType === OrderType.SpecialOffer).length;
 
   return (
     <div className="page">
@@ -364,7 +387,7 @@ export function AllOrdersPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
-        <SummaryCard label="Visi užsakymai" value={orders.length}  color="var(--brand)" />
+        <SummaryCard label="Visi užsakymai" value={ordersWithSystem.length}  color="var(--brand)" />
         <SummaryCard label="Laukiami"       value={pendingCount}   color="#d97706" />
         <SummaryCard label="Užbaigti"       value={completedCount} color="var(--success)" />
         <SummaryCard label="Atšaukti"       value={cancelledCount} color="#ef4444" />
@@ -402,7 +425,7 @@ export function AllOrdersPage() {
           ))}
         </div>
         <span style={{ fontSize: 12, color: "var(--text-3)", marginLeft: "auto" }}>
-          {filtered.length} iš {orders.length}
+          {filtered.length} iš {ordersWithSystem.length}
         </span>
       </div>
 
@@ -420,7 +443,7 @@ export function AllOrdersPage() {
           </div>
         </div>
       ) : (
-        <div className="card" style={{ overflow: "hidden", padding: 0 }}>
+        <div className="card" style={{ overflow: "visible", padding: 0 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: 40 }} />
@@ -449,10 +472,7 @@ export function AllOrdersPage() {
             <tbody>
               {filtered.map((order) => {
                 const expanded     = expandedIds.has(order.id);
-                const itemCount =
-                  order.groupedItems?.length
-                    ? order.groupedItems.reduce((sum, g) => sum + aggregateGroupItemsBySku(g.items ?? []).length, 0)
-                    : (order.items?.length ?? 0);
+                const itemCount = getOrderLineItems(order).length;
                 const isCompleted  = order.status?.toLowerCase().includes("complete");
                 const isDbReserved = order.status?.toLowerCase().includes("reserved");
                 const isPaused     = order.status?.toLowerCase().includes("pause");
@@ -473,30 +493,26 @@ export function AllOrdersPage() {
                   return sum + price * item.quantity;
                 }, 0);
 
-                const flatLineItems = order.items?.length ? order.items : getOrderLineItems(order);
+                const orderSortCategory = resolveOrderSortCategory(orderLineItems);
 
-                const groupedWithAggregates = (order.groupedItems ?? []).map((group) => ({
-                  group,
-                  aggregated: aggregateGroupItemsBySku(group.items ?? []),
-                }));
-                const hasMultiLineGroup = groupedWithAggregates.some(({ aggregated }) => aggregated.length > 1);
-                const multiLineGroups = groupedWithAggregates.filter(({ aggregated }) => aggregated.length > 1);
-                const singleLineItems = groupedWithAggregates
-                  .filter(({ aggregated }) => aggregated.length === 1)
-                  .map(({ aggregated }) => aggregated[0]);
-
-                const sortedLineItems = flatLineItems
+                const sortedLineItems = orderLineItems
                   .map((item) => ({
+                    constCategory: productMap[item.productId]?.systemCategory ?? null,
+                    effectiveCategory:
+                      productMap[item.productId]?.systemCategory === SystemCategory.Shared ||
+                      productMap[item.productId]?.systemCategory == null
+                        ? orderSortCategory
+                        : productMap[item.productId]?.systemCategory,
                     item,
                     product: productMap[item.productId],
-                    category: productMap[item.productId]?.systemCategory ?? null,
                   }))
                   .sort((a, b) => {
-                    const categoryDiff = systemCategoryOrder(a.category) - systemCategoryOrder(b.category);
-                    if (categoryDiff !== 0) return categoryDiff;
-
-                    const excelDiff = getSortIndex(a.product, a.category) - getSortIndex(b.product, b.category);
+                    const excelDiff =
+                      getSortIndex(a.product, a.effectiveCategory) - getSortIndex(b.product, b.effectiveCategory);
                     if (excelDiff !== 0) return excelDiff;
+
+                    const categoryDiff = systemCategoryOrder(a.constCategory) - systemCategoryOrder(b.constCategory);
+                    if (categoryDiff !== 0) return categoryDiff;
 
                     return (
                       (a.product?.sku ?? "").localeCompare(b.product?.sku ?? "") ||
@@ -696,180 +712,6 @@ export function AllOrdersPage() {
                           <div style={{ paddingLeft: 40 }}>
                             {!itemCount ? (
                               <div style={{ padding: "12px 16px", color: "var(--text-3)", fontStyle: "italic", fontSize: 13 }}>Nėra prekių</div>
-                            ) : groupedWithAggregates.length > 0 && itemCount > 1 && hasMultiLineGroup ? (
-                              <div style={{ padding: "10px 10px 14px" }}>
-                                {multiLineGroups.map(({ group, aggregated }) => {
-                                  const groupKey = `${order.id}::${group.groupId}`;
-                                  const groupOpen = expandedGroupKeys.has(groupKey);
-                                  const groupTotal = aggregated.reduce((sum, item) => {
-                                    const price = productMap[item.productId]?.price ?? 0;
-                                    return sum + price * item.quantity;
-                                  }, 0);
-
-                                  return (
-                                    <div key={groupKey} style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", background: "var(--surface)", marginBottom: 10 }}>
-                                      <button
-                                        onClick={() => toggleGroupExpand(order.id, group.groupId)}
-                                        style={{
-                                          display: "flex",
-                                          width: "100%",
-                                          alignItems: "center",
-                                          justifyContent: "space-between",
-                                          padding: "10px 12px",
-                                          border: "none",
-                                          background: "var(--surface-2)",
-                                          cursor: "pointer",
-                                        }}
-                                      >
-                                        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                                          <span style={{
-                                            display: "inline-flex", alignItems: "center", justifyContent: "center",
-                                            width: 20, height: 20, borderRadius: 4,
-                                            background: groupOpen ? "var(--brand)" : "var(--surface)",
-                                            color: groupOpen ? "#fff" : "var(--text-3)",
-                                            fontSize: 10, fontWeight: 700,
-                                          }}>
-                                            {groupOpen ? "▾" : "▸"}
-                                          </span>
-                                          <div style={{ fontWeight: 700, color: "var(--text-1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                            {group.groupName || group.groupId}
-                                          </div>
-                                          <span style={{ fontSize: 12, color: "var(--text-3)" }}>
-                                            ({aggregated.length} eil.)
-                                          </span>
-                                        </div>
-
-                                        <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text-2)" }}>
-                                          {groupTotal > 0 ? `${groupTotal.toFixed(2)} €` : ""}
-                                        </div>
-                                      </button>
-
-                                      {groupOpen && (
-                                        <div style={{ padding: "10px 12px" }}>
-                                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
-                                            <colgroup>
-                                              <col style={{ width: 300 }} />
-                                              <col style={{ width: 200 }} />
-                                              <col style={{ width: 110 }} />
-                                              <col style={{ width: 60 }} />
-                                              <col style={{ width: 90 }} />
-                                              <col style={{ width: 90 }} />
-                                            </colgroup>
-                                            <thead>
-                                              <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                                                <th style={th()}>Produktas</th>
-                                                <th style={th()}>Kodas</th>
-                                                <th style={th("center")}>BENDRAS KIEKIS</th>
-                                                <th style={th("center")}>Kiekis</th>
-                                                <th style={th("right")}>Vnt. kaina</th>
-                                                <th style={th("right")}>Suma</th>
-                                              </tr>
-                                            </thead>
-                                            <tbody>
-                                              {aggregated.map((item, idx) => {
-                                                const price = productMap[item.productId]?.price ?? 0;
-                                                const lineTotal = price * item.quantity;
-                                                return (
-                                                  <tr key={`${item.productId}-${item.sku ?? ""}-${idx}`} style={{ borderBottom: "1px solid var(--border)" }}>
-                                                    <td style={td()}>
-                                                      <span style={{ fontWeight: 500 }}>
-                                                        {item.name || productMap[item.productId]?.name || (
-                                                          <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-3)" }}>{item.productId.slice(0, 8)}…</span>
-                                                        )}
-                                                      </span>
-                                                    </td>
-                                                    <td style={td()}>
-                                                      <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-2)" }}>
-                                                        {item.sku || productMap[item.productId]?.sku || "—"}
-                                                      </span>
-                                                    </td>
-                                                    <td style={{ ...td(), textAlign: "center" }}>
-                                                      <span style={{
-                                                        fontWeight: 700,
-                                                        color: (totalQuantityByProductId[item.productId] ?? 0) < item.quantity ? "var(--danger)" : "var(--text-1)",
-                                                      }}>
-                                                        {totalQuantityByProductId[item.productId] ?? 0}
-                                                      </span>
-                                                    </td>
-                                                    <td style={{ ...td(), textAlign: "center" }}><span style={{ fontWeight: 700 }}>×{item.quantity}</span></td>
-                                                    <td style={{ ...td(), textAlign: "right", color: "var(--text-2)" }}>{price ? `${price.toFixed(2)} €` : "—"}</td>
-                                                    <td style={{ ...td(), textAlign: "right", fontWeight: 700 }}>{lineTotal > 0 ? `${lineTotal.toFixed(2)} €` : "—"}</td>
-                                                  </tr>
-                                                );
-                                              })}
-                                            </tbody>
-                                          </table>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-
-                                {singleLineItems.length > 0 && (
-                                  <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", background: "var(--surface)", marginBottom: 10 }}>
-                                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
-                                      <colgroup>
-                                        <col style={{ width: 300 }} />
-                                        <col style={{ width: 200 }} />
-                                        <col style={{ width: 110 }} />
-                                        <col style={{ width: 60 }} />
-                                        <col style={{ width: 90 }} />
-                                        <col style={{ width: 90 }} />
-                                      </colgroup>
-                                      <thead>
-                                        <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                                          <th style={th()}>Produktas</th>
-                                          <th style={th()}>Kodas</th>
-                                          <th style={th("center")}>BENDRAS KIEKIS</th>
-                                          <th style={th("center")}>Kiekis</th>
-                                          <th style={th("right")}>Vnt. kaina</th>
-                                          <th style={th("right")}>Suma</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {singleLineItems.map((item, idx) => {
-                                          const price = productMap[item.productId]?.price ?? 0;
-                                          const lineTotal = price * item.quantity;
-                                          return (
-                                            <tr key={`single-${item.productId}-${item.sku ?? ""}-${idx}`} style={{ borderBottom: "1px solid var(--border)" }}>
-                                              <td style={td()}>
-                                                <span style={{ fontWeight: 500 }}>
-                                                  {item.name || productMap[item.productId]?.name || (
-                                                    <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-3)" }}>{item.productId.slice(0, 8)}…</span>
-                                                  )}
-                                                </span>
-                                              </td>
-                                              <td style={td()}>
-                                                <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-2)" }}>
-                                                  {item.sku || productMap[item.productId]?.sku || "—"}
-                                                </span>
-                                              </td>
-                                              <td style={{ ...td(), textAlign: "center" }}>
-                                                <span style={{
-                                                  fontWeight: 700,
-                                                  color: (totalQuantityByProductId[item.productId] ?? 0) < item.quantity ? "var(--danger)" : "var(--text-1)",
-                                                }}>
-                                                  {totalQuantityByProductId[item.productId] ?? 0}
-                                                </span>
-                                              </td>
-                                              <td style={{ ...td(), textAlign: "center" }}><span style={{ fontWeight: 700 }}>×{item.quantity}</span></td>
-                                              <td style={{ ...td(), textAlign: "right", color: "var(--text-2)" }}>{price ? `${price.toFixed(2)} €` : "—"}</td>
-                                              <td style={{ ...td(), textAlign: "right", fontWeight: 700 }}>{lineTotal > 0 ? `${lineTotal.toFixed(2)} €` : "—"}</td>
-                                            </tr>
-                                          );
-                                        })}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                )}
-
-                                {total > 0 && (
-                                  <div style={{ display: "flex", justifyContent: "flex-end", padding: "6px 4px 0" }}>
-                                    <div style={{ fontWeight: 600, color: "var(--text-2)", marginRight: 10 }}>Iš viso:</div>
-                                    <div style={{ fontWeight: 900, color: "var(--text-1)", fontSize: 14 }}>{total.toFixed(2)} €</div>
-                                  </div>
-                                )}
-                              </div>
                             ) : (
                               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
                                 <colgroup>

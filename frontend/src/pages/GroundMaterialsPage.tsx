@@ -30,12 +30,33 @@ function normalizeSortText(value: string | null | undefined) {
   return (value ?? "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function normalizeSortKey(value: string | null | undefined) {
+  return normalizeSortText(value).replace(/\s+/g, "");
+}
+
+function findSortOrderIndex(sortOrder: string[], key: string) {
+  return sortOrder.findIndex((pattern) => normalizeSortKey(pattern) === key);
 }
 
 function getMaterialSortIndex(product: Product, sortOrder: string[]) {
+  const skuKey = normalizeSortKey(product.sku);
+  if (skuKey) {
+    const skuMatchedIndex = findSortOrderIndex(sortOrder, skuKey);
+    if (skuMatchedIndex !== -1) return skuMatchedIndex;
+  }
+
   const text = normalizeSortText([product.sku, product.name, product.length?.toString()].filter(Boolean).join(" "));
-  const matchedIndex = sortOrder.findIndex((pattern) => text.includes(normalizeSortText(pattern)));
+  const textWords = new Set(text.split(" ").filter(Boolean));
+  const matchedIndex = sortOrder.findIndex((pattern) => {
+    const patternWords = normalizeSortText(pattern).split(" ").filter(Boolean);
+    if (!patternWords.length) return false;
+    return patternWords.every((word) => textWords.has(word));
+  });
   return matchedIndex === -1 ? Number.MAX_SAFE_INTEGER : matchedIndex;
 }
 

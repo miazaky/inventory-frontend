@@ -27,6 +27,7 @@ export function AllOrdersPage() {
   const [modalOrder, setModalOrder] = useState<Order | null>(null);
   const [pdfLoading, setPdfLoading] = useState<Record<string, boolean>>({});
   const [openMenu, setOpenMenu]   = useState<string | null>(null);
+  const [proposalSending, setProposalSending] = useState<Record<string, boolean>>({});
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -289,11 +290,29 @@ export function AllOrdersPage() {
     }
   };
 
-  const handleSendProposal = (order: Order, e: React.MouseEvent) => {
+  const handleSendProposal = async (order: Order, e: React.MouseEvent) => {
     e.stopPropagation();
     setOpenMenu(null);
-    // TODO: implement send proposal
-    alert(`Siųsti pasiūlymą: ${order.user?.email ?? order.id.slice(0, 8)}`);
+
+    if (!order.pdfUrl) {
+      alert("Šiam užsakymui PDF dar nėra. Pirmiausia sugeneruokite PDF.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Siųsti pasiūlymą klientui ${order.user?.name ?? ""} (${order.user?.email ?? "nežinomas el. paštas"})?`
+    );
+    if (!confirmed) return;
+
+    setProposalSending((prev) => ({ ...prev, [order.id]: true }));
+    try {
+      await ordersApi.sendClientProposalEmail(order.id);
+      alert(`✓ Pasiūlymas sėkmingai išsiųstas: ${order.user?.email}`);
+    } catch {
+      alert("Nepavyko išsiųsti pasiūlymo. Bandykite dar kartą.");
+    } finally {
+      setProposalSending((prev) => ({ ...prev, [order.id]: false }));
+    }
   };
 
   const handleDownloadPdf = async (order: Order, e: React.MouseEvent) => {
@@ -681,8 +700,9 @@ export function AllOrdersPage() {
                               {isSpecial && (
                                 <MenuItem
                                   icon="pi pi-send"
-                                  label="Siųsti pasiūlymą"
+                                  label={proposalSending[order.id] ? "Siunčiama…" : "Siųsti pasiūlymą"}
                                   color="#0ea5e9"
+                                  disabled={proposalSending[order.id]}
                                   onClick={(e) => handleSendProposal(order, e)}
                                 />
                               )}

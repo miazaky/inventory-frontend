@@ -44,4 +44,7 @@ export const ordersApi = {
       method: "PUT",
       body: JSON.stringify({ id, newStatus: status }),
     }),
+
+  sendClientProposalEmail: (id: string) =>
+    apiFetch<void>(`/api/Orders/${id}/send-client-proposal-email`, { method: "POST" }),
 };

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { warehouseInventoryApi } from "../api/warehouseInventory";
-import { productsApi } from "../api/products";
+import { productsApi, isGroundPriceProduct } from "../api/products";
 import { warehousesApi } from "../api/warehouses";
 import { ordersApi } from "../api/orders";
 import { Badge } from "../components/Badge";
@@ -24,7 +24,7 @@ export function DashboardPage() {
           warehouseInventoryApi.getLowStock(),
           ordersApi.getAll(),
         ]);
-        setProducts(p || []);
+        setProducts((p || []).filter((product) => !isGroundPriceProduct(product)));
         setWarehouses(w || []);
         setLowStock(Array.isArray(ls) ? ls : []);
         setPendingOrders((o || []).filter((ord) => ord.status?.toLowerCase().includes("pend")));

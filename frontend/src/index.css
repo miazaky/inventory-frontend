@@ -60,6 +60,10 @@ body {
   overflow-y: auto;
 }
 
+.sidebar.collapsed {
+  width: 76px;
+}
+
 .sidebar-logo {
   padding: 18px 18px 14px;
   border-bottom: 1px solid var(--border);
@@ -69,9 +73,32 @@ body {
   min-height: 60px;
 }
 
+.sidebar-logo-clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sidebar-logo-clickable:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+.sidebar.collapsed .sidebar-logo {
+  padding-inline: 12px;
+  justify-content: center;
+  gap: 0;
+}
+
 .sidebar-logo-icon {
   font-size: 22px;
   line-height: 1;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.sidebar-logo-text-wrap {
+  min-width: 0;
 }
 
 .sidebar-logo-text {
@@ -93,6 +120,10 @@ body {
   padding: 8px;
 }
 
+.sidebar.collapsed .sidebar-nav {
+  padding-inline: 10px;
+}
+
 .nav-item {
   display: flex;
   align-items: center;
@@ -109,6 +140,10 @@ body {
   text-align: left;
   transition: background 0.12s, color 0.12s;
   margin-bottom: 1px;
+}
+
+.nav-label {
+  min-width: 0;
 }
 
 .nav-item .nav-icon {
@@ -130,11 +165,62 @@ body {
   font-weight: 600;
 }
 
+.sidebar.collapsed .sidebar-logo-text-wrap,
+.sidebar.collapsed .sidebar-logo-sub,
+.sidebar.collapsed .sidebar-group-label,
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .sidebar-user,
+.sidebar.collapsed .sidebar-logout-label {
+  display: none;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding-left: 0 !important;
+  padding-right: 0;
+  gap: 0;
+}
+
+.sidebar.collapsed .nav-item .nav-icon {
+  width: auto;
+  font-size: 17px;
+}
+
+.sidebar.collapsed .sidebar-logout-icon {
+  display: inline;
+}
+
+.sidebar-logout-icon-img {
+  width: 18px;
+  height: 18px;
+}
+
+.sidebar-collapse-indicator {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.sidebar-logout-icon {
+  display: none;
+}
+
 /* ── Main content ────────────────────────────────────────────────────────── */
 .main-content {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: 216px;
+  }
+
+  .sidebar.collapsed {
+    width: 76px;
+  }
 }
 
 /* ── Page ────────────────────────────────────────────────────────────────── */
@@ -143,6 +229,7 @@ body {
   max-width: 1120px;
   margin: 0 auto;
 }
+
 
 .page-header {
   display: flex;
@@ -455,6 +542,7 @@ textarea.input {
 .badge-gray   { background: #f1f5f9; color: #475569; }
 .badge-orange { background: #ffedd5; color: #c2410c; }
 .badge-purple { background: #ede9fe; color: #6d28d9; }
+.badge-black  { background: #e2e8f0; color: #0f172a; }
 
 /* ── Alerts ──────────────────────────────────────────────────────────────── */
 .alert {

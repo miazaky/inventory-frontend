@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { transfersApi } from "../api/transfers";
-import { productsApi } from "../api/products";
+import { productsApi, isGroundPriceProduct } from "../api/products";
 import { warehousesApi } from "../api/warehouses";
 import type { Product, Warehouse, TransferInventoryCommand } from "../types";
 import { SelectInput } from "../components/SelectInput";
@@ -15,7 +15,7 @@ export function TransfersPage() {
 
   useEffect(() => {
     Promise.all([productsApi.getAll(), warehousesApi.getAll()]).then(([p, w]) => {
-      setProducts(p || []);
+      setProducts((p || []).filter((product) => !isGroundPriceProduct(product)));
       setWarehouses(w || []);
     });
   }, []);

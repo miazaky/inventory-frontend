@@ -49,6 +49,7 @@ export default function App() {
   const [userEmail, setUserEmail]   = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [current, setCurrent]       = useState<Page>("dashboard");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const logo = "/MK_juodas_mini_permatomas.png";
 
   useEffect(() => {
@@ -99,7 +100,11 @@ export default function App() {
   navItems.forEach((item) => {
     if (item.group && item.group !== lastGroup) {
       rendered.push(
-        <div key={`group-${item.group}`} style={{ padding: "10px 14px 4px", fontSize: 10, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        <div
+          key={`group-${item.group}`}
+          className="sidebar-group-label"
+          style={{ padding: "10px 14px 4px", fontSize: 10, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}
+        >
           {item.group}
         </div>
       );
@@ -112,33 +117,52 @@ export default function App() {
         key={item.key}
         onClick={() => setCurrent(item.key)}
         className={`nav-item ${current === item.key ? "active" : ""}`}
+        title={sidebarCollapsed ? item.label : undefined}
         style={item.group ? { paddingLeft: 24 } : undefined}
       >
         <span className="nav-icon">{item.icon}</span>
-        {item.label}
+        <span className="nav-label">{item.label}</span>
       </button>
     );
   });
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-logo">
+      <aside className={`sidebar ${sidebarCollapsed ? "collapsed" : ""}`}>
+        <div
+          className="sidebar-logo sidebar-logo-clickable"
+          role="button"
+          tabIndex={0}
+          onClick={() => setSidebarCollapsed((value) => !value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setSidebarCollapsed((value) => !value);
+            }
+          }}
+          aria-label={sidebarCollapsed ? "Išskleisti meniu" : "Suskleisti meniu"}
+          aria-expanded={!sidebarCollapsed}
+          title={sidebarCollapsed ? "Išskleisti meniu" : "Suskleisti meniu"}
+        >
           <span className="sidebar-logo-icon">
             <img src={logo} alt="Logo" style={{ width: "100%", height: "100%" }} />
           </span>
-          <div>
+          <div className="sidebar-logo-text-wrap">
             <div className="sidebar-logo-text">Inventorizacija</div>
             <div className="sidebar-logo-sub">Valdymo sistema</div>
           </div>
+          <span className="sidebar-collapse-indicator" aria-hidden="true">
+            {sidebarCollapsed ? "▶" : "◀"}
+          </span>
         </div>
         <nav className="sidebar-nav">
           {rendered}
         </nav>
         <div style={{ padding: "12px 14px", borderTop: "1px solid var(--border)", marginTop: "auto" }}>
-          <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 8, wordBreak: "break-all" }}>{userEmail}</div>
+          <div className={`sidebar-user ${sidebarCollapsed ? "collapsed" : ""}`} title={userEmail ?? undefined} style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 8, wordBreak: "break-all" }}>{userEmail}</div>
           <button onClick={handleLogout} className="btn btn-secondary btn-full" style={{ fontSize: 12, padding: "6px 10px" }}>
-            Atsijungti
+            <span className="sidebar-logout-label">Atsijungti</span>
+            <span className="sidebar-logout-icon" aria-hidden="true"><img src="logout.png" className="sidebar-logout-icon-img" alt="Atsijungti" /></span>
           </button>
         </div>
       </aside>

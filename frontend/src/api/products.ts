@@ -2,6 +2,12 @@ import { apiFetch } from "./apiClient";
 import type { Product, CreateProductCommand, UpdateProductCommand } from "../types";
 import { SystemCategory } from "../types";
 
+export const GROUND_PRICE_PRODUCT_SKU_PREFIX = "__GROUND_PRICE__";
+
+export function isGroundPriceProduct(product: Pick<Product, "sku"> | null | undefined) {
+  return Boolean(product?.sku?.startsWith(GROUND_PRICE_PRODUCT_SKU_PREFIX));
+}
+
 export const productsApi = {
   getAll: () => apiFetch<Product[]>("/api/Products"),
 

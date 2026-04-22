@@ -3,10 +3,10 @@ import { productsApi } from "../api/products";
 import { ordersApi } from "../api/orders";
 import { warehouseInventoryApi } from "../api/warehouseInventory";
 import { warehousesApi } from "../api/warehouses";
-import type { Order, Product, WarehouseInventory, Warehouse, UpdateProductCommand } from "../types";
+import { GROUND_PRICE_PRODUCT_SKU_PREFIX, isGroundPriceProduct } from "../api/products";
+import type { Order, Product, WarehouseInventory, Warehouse, CreateProductCommand, UpdateProductCommand } from "../types";
 import { SystemCategory } from "../types";
 import { Badge } from "../components/Badge";
-import { Modal } from "../components/Modal";
 import { GROUND_MATERIAL_SORT_ORDER, FLAT_ROOF_MATERIAL_SORT_ORDER, SLOPED_ROOF_MATERIAL_SORT_ORDER } from "../types";
 
 export function GroundMaterialsPage() {
@@ -24,6 +24,80 @@ const PAGE_META: Record<number, { title: string; subtitle: string; icon: string;
   [SystemCategory.FlatRoof]:   { title: "Plokščio stogo sistemos medžiagos",  subtitle: "PT05 / PT10 / PT15 / PT20 / RV10 komponentai", icon: "🏢", color: "#2563eb" },
   [SystemCategory.SlopedRoof]: { title: "Šlaitinio stogo sistemos medžiagos", subtitle: "Bėgeliai, kabliai ir tvirtinimo elementai",     icon: "🏠", color: "#9333ea" },
 };
+
+type GroundPriceKey = "POL113" | "EZ113" | "POL130" | "EZ130";
+
+type GroundPriceFamily = "POL" | "EZ";
+
+type GroundWidth = "1134" | "1303";
+
+type GroundPriceRow = {
+  key: GroundPriceKey;
+  title: string;
+  width: GroundWidth;
+  defaultValue: string;
+};
+
+const GROUND_PRICE_ROWS: GroundPriceRow[] = [
+  {
+    key: "POL113",
+    title: "Polinės montavimo sistemos",
+    width: "1134",
+    defaultValue: "44",
+  },
+  {
+    key: "EZ113",
+    title: "„Ežio“ tipo montavimo sistemos su strypais",
+    width: "1134",
+    defaultValue: "49",
+  },
+  {
+    key: "POL130",
+    title: "Polinės montavimo sistemos",
+    width: "1303",
+    defaultValue: "50",
+  },
+  {
+    key: "EZ130",
+    title: "„Ežio“ tipo montavimo sistemos su strypais",
+    width: "1303",
+    defaultValue: "56",
+  },
+];
+
+const GROUND_PRICE_FAMILIES: Record<GroundPriceFamily, { label: string; defaultWidth: GroundWidth }> = {
+  POL: { label: "Polinės montavimo sistemos", defaultWidth: "1134" },
+  EZ: { label: "„Ežio“ tipo montavimo sistemos su strypais", defaultWidth: "1134" },
+};
+
+const GROUND_WIDTH_OPTIONS: { label: string; value: GroundWidth }[] = [
+  { label: "1134 mm", value: "1134" },
+  { label: "1303 mm", value: "1303" },
+];
+function getGroundPriceKey(family: GroundPriceFamily, width: GroundWidth): GroundPriceKey {
+  return `${family}${width === "1134" ? "113" : "130"}` as GroundPriceKey;
+}
+
+function getGroundPriceSku(family: GroundPriceFamily, width: GroundWidth) {
+  return `${GROUND_PRICE_PRODUCT_SKU_PREFIX}${family}_${width}`;
+}
+
+function getGroundPriceSkuAliases(family: GroundPriceFamily, width: GroundWidth) {
+  const legacyFamily = family === "POL" ? "pile" : "hedgehog";
+  const previousFamily = family === "POL" ? "poline" : "ezio";
+  return [
+    `${GROUND_PRICE_PRODUCT_SKU_PREFIX}${family}_${width}`,
+    `${GROUND_PRICE_PRODUCT_SKU_PREFIX}${previousFamily}_${width}`,
+    `${GROUND_PRICE_PRODUCT_SKU_PREFIX}${legacyFamily}_${width}`,
+    `${GROUND_PRICE_PRODUCT_SKU_PREFIX}${legacyFamily}_${width.replace(".", "_")}`,
+  ];
+}
+
+function getGroundPriceDefaults() {
+  return Object.fromEntries(
+    GROUND_PRICE_ROWS.map((row) => [row.key, row.defaultValue])
+  ) as Record<GroundPriceKey, string>;
+}
 
 
 function normalizeSortText(value: string | null | undefined) {
@@ -66,10 +140,9 @@ interface ProductRowProps {
   invs: WarehouseInventory[];
   reservedQty: number;
   onSaved: () => void;
-  onDelete: (p: Product) => void;
 }
 
-function ProductRow({ product, invs, reservedQty, onSaved, onDelete }: ProductRowProps) {
+function ProductRow({ product, invs, reservedQty, onSaved }: ProductRowProps) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     sku:    product.sku           ?? "",
@@ -234,7 +307,6 @@ function ProductRow({ product, invs, reservedQty, onSaved, onDelete }: ProductRo
       <td style={{ ...td(), textAlign: "center" }}>
         <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
           <button onClick={() => setEditing(true)} className="btn btn-ghost btn-icon" title="Redaguoti">✏️</button>
-          <button onClick={() => onDelete(product)} className="btn btn-ghost-danger btn-icon" title="Ištrinti">🗑️</button>
         </div>
       </td>
     </tr>
@@ -250,10 +322,27 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState<string | null>(null);
   const [search,       setSearch]       = useState("");
-  const [deleting,     setDeleting]     = useState<Product | null>(null);
-  const [deleteSaving, setDeleteSaving] = useState(false);
+  const [groundPrices, setGroundPrices] = useState<Record<GroundPriceKey, string>>(getGroundPriceDefaults());
+  const [groundWidths, setGroundWidths] = useState<Record<GroundPriceFamily, GroundWidth>>({
+    POL: GROUND_PRICE_FAMILIES.POL.defaultWidth,
+    EZ: GROUND_PRICE_FAMILIES.EZ.defaultWidth,
+  });
+  const [groundPriceIds, setGroundPriceIds] = useState<Record<GroundPriceKey, string | null>>({
+    POL113: null,
+    EZ113: null,
+    POL130: null,
+    EZ130: null,
+  });
 
   const meta = PAGE_META[category];
+
+  const updateGroundPrice = (key: GroundPriceKey) => (event: React.ChangeEvent<HTMLInputElement>) => {
+    setGroundPrices((currentPrices) => ({ ...currentPrices, [key]: event.target.value }));
+  };
+
+  const updateGroundWidth = (family: GroundPriceFamily) => (event: React.ChangeEvent<HTMLSelectElement>) => {
+    setGroundWidths((currentWidths) => ({ ...currentWidths, [family]: event.target.value as GroundWidth }));
+  };
 
   const load = async () => {
     setLoading(true);
@@ -266,14 +355,53 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
         ordersApi.getAll(),
       ]);
       const allProds = p || [];
-      const hasCategories = allProds.some(
-        (prod) => prod.systemCategory !== undefined && prod.systemCategory !== null
-      );
-      setProducts(
-        hasCategories
-          ? allProds.filter((prod) => Number(prod.systemCategory) === Number(category))
-          : allProds
-      );
+      const hiddenProds = allProds.filter(isGroundPriceProduct);
+      const visibleProds = allProds.filter((prod) => !isGroundPriceProduct(prod));
+
+      const defaults = getGroundPriceDefaults();
+      const nextPrices: Record<GroundPriceKey, string> = { ...defaults };
+      const nextIds: Record<GroundPriceKey, string | null> = {
+        POL113: null,
+        EZ113: null,
+        POL130: null,
+        EZ130: null,
+      };
+
+      hiddenProds.forEach((prod) => {
+        const sku = prod.sku || "";
+        const matchedRow = GROUND_PRICE_ROWS.find((row) => {
+          const family: GroundPriceFamily = row.key.startsWith("POL") ? "POL" : "EZ";
+          return getGroundPriceSkuAliases(family, row.width).includes(sku);
+        });
+        if (!matchedRow) return;
+        nextIds[matchedRow.key] = prod.id;
+        nextPrices[matchedRow.key] = prod.price != null ? String(prod.price) : matchedRow.defaultValue;
+      });
+
+      const missingRows = GROUND_PRICE_ROWS.filter((row) => !nextIds[row.key]);
+      if (missingRows.length) {
+        const created = await Promise.all(
+          missingRows.map(async (row) => {
+            const family: GroundPriceFamily = row.key.startsWith("POL") ? "POL" : "EZ";
+            const cmd: CreateProductCommand = {
+              sku: getGroundPriceSku(family, row.width),
+              name: `${row.title} ${row.width} mm`,
+              description: `ground-price:${family}:${row.width}`,
+              price: Number(row.defaultValue),
+              systemCategory: SystemCategory.Ground,
+            };
+            const id = await productsApi.create(cmd);
+            return { key: row.key, id };
+          })
+        );
+        created.forEach(({ key, id }) => {
+          nextIds[key] = id;
+        });
+      }
+
+      setGroundPrices(nextPrices);
+      setGroundPriceIds(nextIds);
+      setProducts(visibleProds);
       setInventory(inv || []);
       setWarehouses(wh || []);
       setOrders(ord || []);
@@ -286,18 +414,29 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
 
   useEffect(() => { load(); }, [category]);
 
-  const handleDelete = async () => {
-    if (!deleting) return;
-    setDeleteSaving(true);
-    try {
-      await productsApi.delete(deleting.id);
-      setDeleting(null);
-      load();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Klaida trinant");
-    } finally {
-      setDeleteSaving(false);
+  const persistGroundPrice = async (key: GroundPriceKey) => {
+    if (category !== SystemCategory.Ground) return;
+    const priceValue = groundPrices[key];
+    const row = GROUND_PRICE_ROWS.find((item) => item.key === key);
+    if (!row) return;
+    const family: GroundPriceFamily = key.startsWith("POL") ? "POL" : "EZ";
+    const sku = getGroundPriceSku(family, row.width);
+    const payload: CreateProductCommand = {
+      sku,
+      name: `${row.title}`,
+      description: `Žemės-sistema:${family}:${row.width}`,
+      price: Number(priceValue),
+      systemCategory: SystemCategory.Ground,
+    };
+
+    const existingId = groundPriceIds[key];
+    if (existingId) {
+      await productsApi.update(existingId, { id: existingId, ...payload });
+      return;
     }
+
+    const id = await productsApi.create(payload);
+    setGroundPriceIds((current) => ({ ...current, [key]: id }));
   };
 
   // warehouses used only for page-level stats — not shown per row anymore
@@ -358,6 +497,34 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
 
   return (
     <div className="page">
+      {category === SystemCategory.Ground && (
+        <div className="card" style={{ marginBottom: 16, borderLeft: "4px solid #16a34a" }}>
+          <div className="card-header">
+            <div className="card-title">Žemės sistemų kainos klientui</div>
+          </div>
+          <div className="card-body" style={{ display: "grid", gap: 12 }}>
+            <GroundPriceLine
+              title={GROUND_PRICE_FAMILIES.POL.label}
+              family="POL"
+              width={groundWidths.POL}
+              value={groundPrices[getGroundPriceKey("POL", groundWidths.POL)]}
+              onWidthChange={updateGroundWidth("POL")}
+              onChange={updateGroundPrice(getGroundPriceKey("POL", groundWidths.POL))}
+              onBlur={() => { void persistGroundPrice(getGroundPriceKey("POL", groundWidths.POL)); }}
+            />
+            <GroundPriceLine
+              title={GROUND_PRICE_FAMILIES.EZ.label}
+              family="EZ"
+              width={groundWidths.EZ}
+              value={groundPrices[getGroundPriceKey("EZ", groundWidths.EZ)]}
+              onWidthChange={updateGroundWidth("EZ")}
+              onChange={updateGroundPrice(getGroundPriceKey("EZ", groundWidths.EZ))}
+              onBlur={() => { void persistGroundPrice(getGroundPriceKey("EZ", groundWidths.EZ)); }}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="page-header">
         <div className="page-header-left">
           <h1 className="page-title">
@@ -410,27 +577,60 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
                   invs={invByProduct[p.id] ?? []}
                   reservedQty={reservedByProduct[p.id] ?? 0}
                   onSaved={load}
-                  onDelete={setDeleting}
                 />
               ))
             )}
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
 
-      {deleting && (
-        <Modal title="Ištrinti medžiagą" onClose={() => setDeleting(null)} size="sm">
-          <p style={{ color: "var(--text-2)", fontSize: 14, marginBottom: 0 }}>
-            Ar tikrai norite ištrinti <strong>{deleting.name}</strong>? Šio veiksmo negalima atšaukti.
-          </p>
-          <div className="modal-footer">
-            <button onClick={() => setDeleting(null)} className="btn btn-secondary">Atšaukti</button>
-            <button onClick={handleDelete} disabled={deleteSaving} className="btn btn-danger">
-              {deleteSaving ? "Trinama..." : "Ištrinti"}
-            </button>
-          </div>
-        </Modal>
-      )}
+function GroundPriceLine({
+  title,
+  family,
+  width,
+  value,
+  onWidthChange,
+  onChange,
+  onBlur,
+}: {
+  title: string;
+  family: GroundPriceFamily;
+  width: GroundWidth;
+  value: string;
+  onWidthChange: (event: React.ChangeEvent<HTMLSelectElement>) => void;
+  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onBlur: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 14px", border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface-2)", flexWrap: "wrap" }}>
+      <div style={{ minWidth: 0, flex: "1 1 250px" }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-1)" }}>{title}</div>
+        <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+          {family === "POL" ? "Polinė sistema" : "„Ežio“ sistema"}
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
+        <select className="input" value={width} onChange={onWidthChange} style={{ width: 120 }}>
+          {GROUND_WIDTH_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <input
+          className="input"
+          type="number"
+          step="0.01"
+          value={value}
+          onChange={onChange}
+          onBlur={onBlur}
+          style={{ width: 92, textAlign: "right" }}
+        />
+        <span style={{ fontSize: 13, color: "var(--text-2)", whiteSpace: "nowrap" }}>EUR/mod + PVM</span>
+      </div>
     </div>
   );
 }

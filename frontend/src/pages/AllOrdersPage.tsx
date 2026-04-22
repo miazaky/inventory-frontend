@@ -1,6 +1,6 @@
 import { useEffect, useState, Fragment, useRef, type CSSProperties } from "react";
 import { ordersApi } from "../api/orders";
-import { productsApi } from "../api/products";
+import { productsApi, isGroundPriceProduct } from "../api/products";
 import { warehouseInventoryApi } from "../api/warehouseInventory";
 import type { Order, Product, WarehouseInventory, OrderItem } from "../types";
 import { OrderType, SystemCategory } from "../types";
@@ -34,7 +34,7 @@ export function AllOrdersPage() {
     Promise.all([ordersApi.getAll(), productsApi.getAll(), warehouseInventoryApi.getAll()])
       .then(([o, p, inv]) => {
         setOrders(o || []);
-        setProducts(p || []);
+        setProducts((p || []).filter((product) => !isGroundPriceProduct(product)));
         setInventories(inv || []);
       })
       .catch(() => setError("Nepavyko įkelti užsakymų"))
@@ -174,10 +174,29 @@ export function AllOrdersPage() {
     });
   };
 
+  const normalizeOrderItemsByProduct = (items: OrderItem[]): OrderItem[] => {
+    const maxQtyByProduct = new Map<string, number>();
+    for (const item of items) {
+      const current = maxQtyByProduct.get(item.productId) ?? 0;
+      if (item.quantity > current) {
+        maxQtyByProduct.set(item.productId, item.quantity);
+      }
+    }
+
+    return Array.from(maxQtyByProduct.entries()).map(([productId, quantity]) => ({
+      productId,
+      quantity,
+    }));
+  };
+
   const getOrderLineItems = (order: Order): OrderItem[] => {
-    if (order.items?.length) return order.items;
     const grouped = order.groupedItems ?? [];
-    return grouped.flatMap((g) => (g.items ?? []).map((i) => ({ productId: i.productId, quantity: i.quantity })));
+    const groupedItems = grouped.flatMap((g) =>
+      (g.items ?? []).map((i) => ({ productId: i.productId, quantity: i.quantity }))
+    );
+
+    const sourceItems = groupedItems.length ? groupedItems : (order.items ?? []);
+    return normalizeOrderItemsByProduct(sourceItems);
   };
 
   const sumQuantitiesByProductId = (items: OrderItem[]) =>
@@ -185,6 +204,10 @@ export function AllOrdersPage() {
       acc[item.productId] = (acc[item.productId] ?? 0) + item.quantity;
       return acc;
     }, {});
+
+  const getDisplayLineItems = (order: Order): OrderItem[] => {
+    return getOrderLineItems(order);
+  };
 
   const handleReserveClick = async (order: Order, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -405,7 +428,7 @@ export function AllOrdersPage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginRight: -32, marginBottom: 16 }}>
         <SummaryCard label="Visi užsakymai" value={ordersWithSystem.length}  color="var(--brand)" />
         <SummaryCard label="Laukiami"       value={pendingCount}   color="#d97706" />
         <SummaryCard label="Užbaigti"       value={completedCount} color="var(--success)" />
@@ -443,7 +466,7 @@ export function AllOrdersPage() {
             </button>
           ))}
         </div>
-        <span style={{ fontSize: 12, color: "var(--text-3)", marginLeft: "auto" }}>
+        <span style={{ fontSize: 13, color: "var(--text-2)", marginLeft: "auto", marginRight: -32, fontWeight: 500 }}>
           {filtered.length} iš {ordersWithSystem.length}
         </span>
       </div>
@@ -452,10 +475,10 @@ export function AllOrdersPage() {
       {reserveError && <div className="alert alert-error" style={{ marginBottom: 14 }}>⚠ {reserveError}</div>}
 
       {loading ? (
-        <div style={{ textAlign: "center", padding: "60px 0", color: "var(--text-3)", fontSize: 14 }}>Kraunama…</div>
+        <div style={{ textAlign: "center", padding: "60px 0", color: "var(--text-2)", fontSize: 15, fontWeight: 500 }}>Kraunama…</div>
       ) : filtered.length === 0 ? (
         <div className="card">
-          <div className="card-body" style={{ textAlign: "center", padding: "48px 0", color: "var(--text-3)", fontSize: 14 }}>
+          <div className="card-body" style={{ textAlign: "center", padding: "48px 0", color: "var(--text-2)", fontSize: 15, fontWeight: 500 }}>
             {search || statusFilter !== "all" || proposalFilter !== "all"
               ? "Pagal paieškos kriterijus užsakymų nerasta"
               : "Užsakymų dar nėra"}
@@ -463,17 +486,17 @@ export function AllOrdersPage() {
         </div>
       ) : (
         <div className="card" style={{ overflow: "visible", padding: 0 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: 40 }} />
-              <col style={{ width: 100 }} />
-              <col style={{ width: 160 }} />
-              <col style={{ width: 165 }} />
               <col style={{ width: 110 }} />
-              <col style={{ width: 120 }} />
-              <col style={{ width: 100 }} />
-              <col style={{ width: 50 }} />
+              <col style={{ width: 210 }} />
+              <col style={{ width: 240 }} />
+              <col style={{ width: 110 }} />
+              <col style={{ width: 125 }} />
+              <col style={{ width: 110 }} />
               <col style={{ width: 60 }} />
+              <col style={{ width: 90}} />
             </colgroup>
             <thead>
               <tr style={{ background: "var(--surface-2)", borderBottom: "2px solid var(--border)" }}>
@@ -491,7 +514,8 @@ export function AllOrdersPage() {
             <tbody>
               {filtered.map((order) => {
                 const expanded     = expandedIds.has(order.id);
-                const itemCount = getOrderLineItems(order).length;
+                const displayLineItems = getDisplayLineItems(order);
+                const itemCount = displayLineItems.length;
                 const isCompleted  = order.status?.toLowerCase().includes("complete");
                 const isDbReserved = order.status?.toLowerCase().includes("reserved");
                 const isPaused     = order.status?.toLowerCase().includes("pause");
@@ -506,15 +530,14 @@ export function AllOrdersPage() {
                 const isSpecial    = order.orderType === OrderType.SpecialOffer;
                 const menuOpen     = openMenu === order.id;
 
-                const orderLineItems = getOrderLineItems(order);
-                const total = orderLineItems.reduce((sum, item) => {
+                const total = displayLineItems.reduce((sum, item) => {
                   const price = productMap[item.productId]?.price ?? 0;
                   return sum + price * item.quantity;
                 }, 0);
 
-                const orderSortCategory = resolveOrderSortCategory(orderLineItems);
+                const orderSortCategory = resolveOrderSortCategory(displayLineItems);
 
-                const sortedLineItems = orderLineItems
+                const sortedLineItems = displayLineItems
                   .map((item) => ({
                     constCategory: productMap[item.productId]?.systemCategory ?? null,
                     effectiveCategory:
@@ -566,7 +589,7 @@ export function AllOrdersPage() {
 
                       {/* Date */}
                       <td style={td()}>
-                        <span style={{ color: "var(--text-2)", fontSize: 12 }}>
+                        <span style={{ color: "var(--text-1)", fontSize: 13, fontWeight: 500 }}>
                           {order.createdDate
                             ? new Date(order.createdDate).toLocaleDateString("lt-LT", { year: "numeric", month: "2-digit", day: "2-digit" })
                             : "—"}
@@ -576,34 +599,34 @@ export function AllOrdersPage() {
                       {/* Customer */}
                       <td style={td()}>
                         <div style={{ fontWeight: 600, color: "var(--text-1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {order.user?.name || <span style={{ color: "var(--text-3)" }}>—</span>}
+                          {order.user?.name || <span style={{ color: "var(--text-2)" }}>—</span>}
                         </div>
                         {order.user?.companyCode && (
-                          <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>{order.user.companyCode}</div>
+                          <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2, fontWeight: 500 }}>{order.user.companyCode}</div>
                         )}
                       </td>
 
                       {/* Email / Phone */}
                       <td style={td()}>
-                        <div style={{ color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{order.user?.email || "—"}</div>
+                        <div style={{ color: "var(--text-1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>{order.user?.email || "—"}</div>
                         {order.user?.phone && (
-                          <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>{order.user.phone}</div>
+                          <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2, fontWeight: 500 }}>{order.user.phone}</div>
                         )}
                       </td>
 
                       {/* Status badge */}
                       <td style={td()}>
-                        <Badge variant={statusVariant(order.status)}>{statusLabel(order.status)}</Badge>
+                        <Badge className="order-badge-lg" variant={statusVariant(order.status)}>{statusLabel(order.status)}</Badge>
                       </td>
 
                       {/* Proposal type */}
                       <td style={td()}>
-                        <Badge variant={proposalVariant(order.orderType)}>{proposalLabel(order.orderType)}</Badge>
+                        <Badge className="order-badge-lg" variant={proposalVariant(order.orderType)}>{proposalLabel(order.orderType)}</Badge>
                       </td>
 
                       {/* System type */}
                       <td style={td()}>
-                        <Badge variant="gray">{getOrderSystemCategoryLabel(order)}</Badge>
+                        <Badge className="order-badge-lg" variant="black">{getOrderSystemCategoryLabel(order)}</Badge>
                       </td>
 
                       {/* Item count */}
@@ -731,9 +754,9 @@ export function AllOrdersPage() {
                         <td colSpan={9} style={{ padding: 0, background: "#f5f7ff", textAlign: "left" }}>
                           <div style={{ paddingLeft: 40 }}>
                             {!itemCount ? (
-                              <div style={{ padding: "12px 16px", color: "var(--text-3)", fontStyle: "italic", fontSize: 13 }}>Nėra prekių</div>
+                              <div style={{ padding: "12px 16px", color: "var(--text-2)", fontStyle: "italic", fontSize: 14, fontWeight: 500 }}>Nėra prekių</div>
                             ) : (
-                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
+                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, tableLayout: "fixed" }}>
                                 <colgroup>
                                   <col style={{ width: 300 }} />
                                   <col style={{ width: 200 }} />
@@ -757,18 +780,18 @@ export function AllOrdersPage() {
                                     const lineTotal = (prod?.price ?? 0) * item.quantity;
                                     return (
                                       <tr key={`${item.productId}-${idx}`} style={{ borderBottom: "1px solid var(--border)" }}>
-                                        <td style={td()}><span style={{ fontWeight: 500 }}>{prod?.name || <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-3)" }}>{item.productId.slice(0, 8)}…</span>}</span></td>
-                                        <td style={td()}><span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-2)" }}>{prod?.sku || "—"}</span></td>
+                                        <td style={td()}><span style={{ fontWeight: 600 }}>{prod?.name || <span style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-2)" }}>{item.productId.slice(0, 8)}…</span>}</span></td>
+                                        <td style={td()}><span style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-1)", fontWeight: 500 }}>{prod?.sku || "—"}</span></td>
                                         <td style={{ ...td(), textAlign: "center" }}><span style={{ fontWeight: 700, color: totalQuantityByProductId[item.productId] < item.quantity ? "var(--danger)" : "var(--text-1)" }}>{totalQuantityByProductId[item.productId]}</span></td>
                                         <td style={{ ...td(), textAlign: "center" }}><span style={{ fontWeight: 700 }}>×{item.quantity}</span></td>
-                                        <td style={{ ...td(), textAlign: "right", color: "var(--text-2)" }}>{prod?.price != null ? `${prod.price.toFixed(2)} €` : "—"}</td>
+                                        <td style={{ ...td(), textAlign: "right", color: "var(--text-1)", fontWeight: 500 }}>{prod?.price != null ? `${prod.price.toFixed(2)} €` : "—"}</td>
                                         <td style={{ ...td(), textAlign: "right", fontWeight: 700 }}>{lineTotal > 0 ? `${lineTotal.toFixed(2)} €` : "—"}</td>
                                       </tr>
                                     );
                                   })}
                                   {total > 0 && (
                                     <tr style={{ borderTop: "2px solid var(--border)" }}>
-                                      <td colSpan={5} style={{ ...td(), textAlign: "right", fontWeight: 600, color: "var(--text-2)" }}>Iš viso:</td>
+                                      <td colSpan={5} style={{ ...td(), textAlign: "right", fontWeight: 700, color: "var(--text-1)" }}>Iš viso:</td>
                                       <td style={{ ...td(), textAlign: "right", fontWeight: 800, fontSize: 14 }}>{total.toFixed(2)} €</td>
                                     </tr>
                                   )}
@@ -799,6 +822,7 @@ export function AllOrdersPage() {
       <style>{`
         .order-row:hover { background: var(--surface-2) !important; }
         .menu-item:hover { background: var(--surface-2); }
+        .order-badge-lg { font-size: 12px; }
       `}</style>
     </div>
   );
@@ -837,16 +861,16 @@ function MenuItem({
 function SummaryCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="card" style={{ padding: "16px 20px", marginTop: 16, minHeight: 80, boxSizing: "border-box" }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 800, color }}>{value}</div>
     </div>
   );
 }
 
 function th(align: "left" | "center" | "right" = "left"): CSSProperties {
-  return { padding: "9px 10px", textAlign: align, fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" };
+  return { padding: "10px 10px", textAlign: align, fontSize: 13, fontWeight: 700, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "0.03em", whiteSpace: "nowrap", lineHeight: 1.35 };
 }
 
 function td(): CSSProperties {
-  return { padding: "11px 12px", verticalAlign: "middle" };
+  return { padding: "12px 12px", verticalAlign: "middle", fontSize: 15, lineHeight: 1.45 };
 }

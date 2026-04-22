@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { transactionsApi } from "../api/transactions";
-import { productsApi } from "../api/products";
+import { productsApi, isGroundPriceProduct } from "../api/products";
 import { warehousesApi } from "../api/warehouses";
 import type { InventoryTransaction, Product, Warehouse, CreateTransactionCommand } from "../types";
 import { TransactionType } from "../types";
@@ -23,7 +23,7 @@ export function TransactionsPage() {
 
   useEffect(() => {
     Promise.all([productsApi.getAll(), warehousesApi.getAll()]).then(([p, w]) => {
-      setProducts(p || []);
+      setProducts((p || []).filter((product) => !isGroundPriceProduct(product)));
       setWarehouses(w || []);
     });
   }, []);

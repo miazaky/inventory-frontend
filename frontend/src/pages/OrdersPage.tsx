@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ordersApi } from "../api/orders";
-import { productsApi } from "../api/products";
+import { productsApi, isGroundPriceProduct } from "../api/products";
 import { warehousesApi } from "../api/warehouses";
 import type { Order, Product, Warehouse } from "../types";
 import { Badge } from "../components/Badge";
@@ -24,7 +24,7 @@ export function OrdersPage() {
 
   useEffect(() => {
     Promise.all([productsApi.getAll(), warehousesApi.getAll()]).then(([p, w]) => {
-      setProducts(p || []);
+      setProducts((p || []).filter((product) => !isGroundPriceProduct(product)));
       setWarehouses(w || []);
     });
   }, []);

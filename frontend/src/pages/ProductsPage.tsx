@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ordersApi } from "../api/orders";
-import { productsApi } from "../api/products";
+import { productsApi, isGroundPriceProduct } from "../api/products";
 import { warehouseInventoryApi } from "../api/warehouseInventory";
 import type { Order, Product, CreateProductCommand, UpdateProductCommand, WarehouseInventory } from "../types";
 import { Modal } from "../components/Modal";
@@ -193,7 +193,7 @@ export function ProductsPage() {
         warehouseInventoryApi.getAll(),
         ordersApi.getAll(),
       ]);
-      setProducts(p  || []);
+      setProducts((p || []).filter((product) => !isGroundPriceProduct(product)));
       setInventory(inv || []);
       setOrders(ord || []);
     } catch (e: unknown) {

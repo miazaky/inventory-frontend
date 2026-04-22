@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { warehouseInventoryApi } from "../api/warehouseInventory";
-import { productsApi } from "../api/products";
+import { productsApi, isGroundPriceProduct } from "../api/products";
 import { warehousesApi } from "../api/warehouses";
 import type { WarehouseInventory, Product, Warehouse, CreateWarehouseInventoryCommand } from "../types";
 import { Modal } from "../components/Modal";
@@ -152,7 +152,7 @@ export function InventoryPage() {
         warehousesApi.getAll(),
       ]);
       setInventory(Array.isArray(inv) ? inv : []);
-      setProducts(prods || []);
+      setProducts((prods || []).filter((product) => !isGroundPriceProduct(product)));
       setWarehouses(whs || []);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load");

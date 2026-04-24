@@ -45,6 +45,9 @@ export const ordersApi = {
       body: JSON.stringify({ id, newStatus: status }),
     }),
 
-  sendClientProposalEmail: (id: string) =>
-    apiFetch<void>(`/api/Orders/${id}/send-client-proposal-email`, { method: "POST" }),
+  sendClientProposalEmail: (id: string, body?: { moduleCount?: number; moduleArea?: number; moduleLength?: number, ggCode?: string; systemType?: string}) =>
+    apiFetch<void>(`/api/Orders/${id}/send-client-proposal-email`, {
+      method: "POST",
+      body: body ? JSON.stringify(body) : undefined,
+    }),
 };

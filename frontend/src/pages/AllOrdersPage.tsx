@@ -322,14 +322,35 @@ export function AllOrdersPage() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Siųsti pasiūlymą klientui ${order.user?.name ?? ""} (${order.user?.email ?? "nežinomas el. paštas"})?`
-    );
-    if (!confirmed) return;
+    const items = order.items ?? [];
+
+    const ggCode = (() => {
+      for (const item of items) {
+        const sku = productMap[item.productId]?.sku ?? "";
+        if (/^GG-\d+$/i.test(sku)) return sku.toUpperCase();
+      }
+      return undefined;
+    })();
+
+    const systemType = (() => {
+      const names = Array.from(new Set(
+        items.map((i) => i.systemName?.trim()).filter((n): n is string => Boolean(n))
+      ));
+      const name = (names[0] ?? "").toLowerCase();
+      if (name.includes("ežio") || name.includes("ezio") || name.includes("ezys")) return "ezys";
+      if (name.includes("polin")) return "poline";
+      return undefined;
+    })();
 
     setProposalSending((prev) => ({ ...prev, [order.id]: true }));
     try {
-      await ordersApi.sendClientProposalEmail(order.id);
+      await ordersApi.sendClientProposalEmail(order.id, {
+        moduleCount: order.moduleCount ?? undefined,
+        moduleArea:   order.moduleArea   ?? undefined,
+        moduleLength:    order.moduleLength    ?? undefined,
+        ggCode,
+        systemType,
+      });
       alert(`✓ Pasiūlymas sėkmingai išsiųstas: ${order.user?.email}`);
     } catch {
       alert("Nepavyko išsiųsti pasiūlymo. Bandykite dar kartą.");

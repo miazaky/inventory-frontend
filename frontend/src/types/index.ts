@@ -145,6 +145,9 @@ export interface Order {
   items?: OrderItem[] | null;
 
   groupedItems?: OrderGroupedItemsGroup[] | null;
+  moduleCount?: number | null;
+  moduleArea?: number | null;
+  moduleLength?: number | null;
 }
 
 export interface OrderGroupedItemsGroup {

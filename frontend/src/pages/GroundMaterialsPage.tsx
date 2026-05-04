@@ -134,15 +134,39 @@ function getMaterialSortIndex(product: Product, sortOrder: string[]) {
   return matchedIndex === -1 ? Number.MAX_SAFE_INTEGER : matchedIndex;
 }
 
+function getCategoryMaterialSortOrder(category: SystemCategory) {
+  if (category === SystemCategory.Ground) return GROUND_MATERIAL_SORT_ORDER;
+  if (category === SystemCategory.FlatRoof) return FLAT_ROOF_MATERIAL_SORT_ORDER;
+  return SLOPED_ROOF_MATERIAL_SORT_ORDER;
+}
+
+function isProductIncludedInCategoryCatalog(product: Product, category: SystemCategory) {
+  return getMaterialSortIndex(product, getCategoryMaterialSortOrder(category)) !== Number.MAX_SAFE_INTEGER;
+}
+
+function isProductVisibleInCategory(product: Product, category: SystemCategory) {
+  const belongsToCategory =
+    product.systemCategory === category ||
+    product.systemCategory === SystemCategory.Shared ||
+    (
+      (category === SystemCategory.FlatRoof || category === SystemCategory.SlopedRoof) &&
+      product.systemCategory === SystemCategory.RoofShared
+    );
+
+  return belongsToCategory && isProductIncludedInCategoryCatalog(product, category);
+}
+
 // ── Inline editable row ──────────────────────────────────────────────────────
 interface ProductRowProps {
   product: Product;
   invs: WarehouseInventory[];
+  warehouses: Warehouse[];
   reservedQty: number;
   onSaved: () => void;
 }
 
-function ProductRow({ product, invs, reservedQty, onSaved }: ProductRowProps) {
+function ProductRow({ product, invs, warehouses, reservedQty, onSaved }: ProductRowProps) {
+  const getInitialWarehouseId = () => warehouses[0]?.id ?? "";
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     sku:    product.sku           ?? "",
@@ -151,6 +175,9 @@ function ProductRow({ product, invs, reservedQty, onSaved }: ProductRowProps) {
     price:  product.price?.toString()  ?? "",
     // qty per inventory record: id → quantity string
     qtys:   Object.fromEntries(invs.map((i) => [i.id, String(i.quantityCurrent)])),
+  });
+  const [newInventory, setNewInventory] = useState({
+    quantityCurrent: "",
   });
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState<string | null>(null);
@@ -189,6 +216,26 @@ function ProductRow({ product, invs, reservedQty, onSaved }: ProductRowProps) {
         })
       );
 
+      if (invs.length === 0 && newInventory.quantityCurrent !== "") {
+        const parsedQty = Number(newInventory.quantityCurrent);
+        if (!Number.isFinite(parsedQty) || parsedQty < 0) {
+          throw new Error("Netinkamas kiekis");
+        }
+        if (parsedQty > 0) {
+          const warehouseId = getInitialWarehouseId();
+          if (!warehouseId) {
+            throw new Error("Nėra sandėlio");
+          }
+          await warehouseInventoryApi.create({
+            warehouseId,
+            productId: product.id,
+            quantityCurrent: parsedQty,
+            quantityMin: 0,
+            quantityMax: Math.max(parsedQty + 1, 1),
+          });
+        }
+      }
+
       setEditing(false);
       onSaved();
     } catch (e: unknown) {
@@ -206,6 +253,9 @@ function ProductRow({ product, invs, reservedQty, onSaved }: ProductRowProps) {
       price:  product.price?.toString()  ?? "",
       qtys:   Object.fromEntries(invs.map((i) => [i.id, String(i.quantityCurrent)])),
     });
+    setNewInventory({
+      quantityCurrent: "",
+    });
     setError(null);
     setEditing(false);
   };
@@ -222,7 +272,17 @@ function ProductRow({ product, invs, reservedQty, onSaved }: ProductRowProps) {
           <td><input className="input input-inline" type="number" value={form.length} onChange={set("length")} placeholder="mm" style={{ width: 80 }} /></td>
           <td style={{ textAlign: "center" }}>
             {invs.length === 0 ? (
-              <span style={{ color: "var(--text-3)", fontSize: 12 }}>—</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center" }}>
+                <input
+                  className="input input-inline"
+                  type="number"
+                  min={0}
+                  value={newInventory.quantityCurrent}
+                  onChange={(e) => setNewInventory((current) => ({ ...current, quantityCurrent: e.target.value }))}
+                  placeholder="Kiekis"
+                  style={{ width: 90, textAlign: "center" }}
+                />
+              </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {invs.map((inv) => (
@@ -337,7 +397,9 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
   const meta = PAGE_META[category];
 
   const updateGroundPrice = (key: GroundPriceKey) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    setGroundPrices((currentPrices) => ({ ...currentPrices, [key]: event.target.value }));
+    const nextValue = event.target.value;
+    if (nextValue.startsWith("-") || Number(nextValue) < 0) return;
+    setGroundPrices((currentPrices) => ({ ...currentPrices, [key]: nextValue }));
   };
 
   const updateGroundWidth = (family: GroundPriceFamily) => (event: React.ChangeEvent<HTMLSelectElement>) => {
@@ -356,7 +418,9 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
       ]);
       const allProds = p || [];
       const hiddenProds = allProds.filter(isGroundPriceProduct);
-      const visibleProds = allProds.filter((prod) => !isGroundPriceProduct(prod));
+      const visibleProds = allProds.filter((prod) =>
+        !isGroundPriceProduct(prod) && isProductVisibleInCategory(prod, category)
+      );
 
       const defaults = getGroundPriceDefaults();
       const nextPrices: Record<GroundPriceKey, string> = { ...defaults };
@@ -417,6 +481,11 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
   const persistGroundPrice = async (key: GroundPriceKey) => {
     if (category !== SystemCategory.Ground) return;
     const priceValue = groundPrices[key];
+    const parsedPrice = Number(priceValue);
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      setGroundPrices((currentPrices) => ({ ...currentPrices, [key]: "0" }));
+      return;
+    }
     const row = GROUND_PRICE_ROWS.find((item) => item.key === key);
     if (!row) return;
     const family: GroundPriceFamily = key.startsWith("POL") ? "POL" : "EZ";
@@ -425,7 +494,7 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
       sku,
       name: `${row.title}`,
       description: `Žemės-sistema:${family}:${row.width}`,
-      price: Number(priceValue),
+      price: parsedPrice,
       systemCategory: SystemCategory.Ground,
     };
 
@@ -575,6 +644,7 @@ function CategoryMaterialsPage({ category }: { category: SystemCategory }) {
                   key={p.id}
                   product={p}
                   invs={invByProduct[p.id] ?? []}
+                  warehouses={warehouses}
                   reservedQty={reservedByProduct[p.id] ?? 0}
                   onSaved={load}
                 />
@@ -623,6 +693,7 @@ function GroundPriceLine({
         <input
           className="input"
           type="number"
+          min={0}
           step="0.01"
           value={value}
           onChange={onChange}

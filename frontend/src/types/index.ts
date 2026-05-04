@@ -136,6 +136,7 @@ export enum OrderType {
 // ── Orders ───────────────────────────────────────────────────────────────────
 export interface Order {
   id: string;
+  orderNumber?: string | null;
   warehouseId: string;
   status: string | null;
   createdDate: string;

@@ -426,6 +426,7 @@ export function AllOrdersPage() {
     const matchSearch =
       !q ||
       o.id.toLowerCase().includes(q) ||
+      o.orderNumber?.toLowerCase().includes(q) ||
       o.user?.name?.toLowerCase().includes(q) ||
       o.user?.email?.toLowerCase().includes(q) ||
       o.user?.companyCode?.toLowerCase().includes(q) ||
@@ -449,7 +450,7 @@ export function AllOrdersPage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginRight: -32, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 16 }}>
         <SummaryCard label="Visi užsakymai" value={ordersWithSystem.length}  color="var(--brand)" />
         <SummaryCard label="Laukiami"       value={pendingCount}   color="#d97706" />
         <SummaryCard label="Užbaigti"       value={completedCount} color="var(--success)" />
@@ -487,7 +488,7 @@ export function AllOrdersPage() {
             </button>
           ))}
         </div>
-        <span style={{ fontSize: 13, color: "var(--text-2)", marginLeft: "auto", marginRight: -32, fontWeight: 500 }}>
+        <span style={{ fontSize: 13, color: "var(--text-2)", marginLeft: "auto", fontWeight: 500 }}>
           {filtered.length} iš {ordersWithSystem.length}
         </span>
       </div>
@@ -512,6 +513,7 @@ export function AllOrdersPage() {
               <col style={{ width: 40 }} />
               <col style={{ width: 110 }} />
               <col style={{ width: 210 }} />
+              <col style={{ width: 170 }} />
               <col style={{ width: 240 }} />
               <col style={{ width: 110 }} />
               <col style={{ width: 125 }} />
@@ -524,6 +526,7 @@ export function AllOrdersPage() {
                 <th style={th()}></th>
                 <th style={th()}>Data</th>
                 <th style={th()}>Klientas</th>
+                <th style={th("center")}>Užsakymo nr.</th>
                 <th style={th()}>El. paštas / Tel.</th>
                 <th style={th()}>Statusas</th>
                 <th style={th()}>Pasiūlymas</th>
@@ -625,6 +628,13 @@ export function AllOrdersPage() {
                         {order.user?.companyCode && (
                           <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2, fontWeight: 500 }}>{order.user.companyCode}</div>
                         )}
+                      </td>
+
+                      {/* Order number */}
+                      <td style={{ ...td(), textAlign: "center" }}>
+                        <span style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-1)", fontWeight: 600 }}>
+                          {order.orderNumber || "—"}
+                        </span>
                       </td>
 
                       {/* Email / Phone */}
@@ -772,7 +782,7 @@ export function AllOrdersPage() {
                     {/* Expanded items sub-table */}
                     {expanded && (
                       <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                        <td colSpan={9} style={{ padding: 0, background: "#f5f7ff", textAlign: "left" }}>
+                        <td colSpan={10} style={{ padding: 0, background: "#f5f7ff", textAlign: "left" }}>
                           <div style={{ paddingLeft: 40 }}>
                             {!itemCount ? (
                               <div style={{ padding: "12px 16px", color: "var(--text-2)", fontStyle: "italic", fontSize: 14, fontWeight: 500 }}>Nėra prekių</div>

@@ -1,4 +1,10 @@
-type BadgeVariant = "green" | "red" | "yellow" | "blue" | "gray" | "orange" | "purple" | "black";
+interface BadgeProps {
+  children: React.ReactNode;
+  variant?: BadgeVariant;
+  className?: string;
+}
+
+type BadgeVariant = string;
 interface BadgeProps {
   children: React.ReactNode;
   variant?: BadgeVariant;
@@ -6,5 +12,8 @@ interface BadgeProps {
 }
 
 export function Badge({ children, variant = "gray", className = "" }: BadgeProps) {
-  return <span className={`badge badge-${variant} ${className}`.trim()}>{children}</span>;
+  const isHex = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(variant);
+  const style = isHex ? { background: variant, color: "#fff" } as React.CSSProperties : undefined;
+  const cls = isHex ? `badge ${className}`.trim() : `badge badge-${variant} ${className}`.trim();
+  return <span className={cls} style={style}>{children}</span>;
 }

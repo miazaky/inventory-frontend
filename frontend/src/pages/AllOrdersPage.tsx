@@ -8,7 +8,7 @@ import { Badge } from "../components/Badge";
 import { LowStockModal } from "../components/LowStockModal";
 import { GROUND_MATERIAL_SORT_ORDER, FLAT_ROOF_MATERIAL_SORT_ORDER, SLOPED_ROOF_MATERIAL_SORT_ORDER } from "../types";
 
-type StatusFilter = "all" | "working" | "reserved" | "paused" | "completed" | "cancelled";
+type StatusFilter = "all" | "working" | "reserved" | "paused" | "completed" | "cancelled" | "collected";
 type ProposalFilter = "all" | "special" | "noSpecial";
 type ReserveState = "idle" | "working" | "reserved" | "completed";
 
@@ -292,6 +292,18 @@ export function AllOrdersPage() {
     }
   };
 
+   const handleCollected = async (order: Order, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpenMenu(null);
+    try {
+      await ordersApi.updateStatus(order.id, "COLLECTED");
+        setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: "COLLECTED" } : o));
+    } catch {
+      setReserveError("Nepavyko atšaukti užsakymo.");
+    }
+  };
+
+
 
 
   const handleModalConfirm = async () => {
@@ -373,7 +385,7 @@ export function AllOrdersPage() {
     }
   };
 
-  const statusVariant = (status: string | null): "green" | "yellow" | "blue" | "gray" | "red" => {
+  const statusVariant = (status: string | null): string => {
     if (!status) return "gray";
     const s = status.toLowerCase();
     if (s.includes("complete")) return "green";
@@ -381,6 +393,7 @@ export function AllOrdersPage() {
     if (s.includes("pend"))     return "yellow";
     if (s.includes("pause"))    return "gray";
     if (s.includes("cancel") ) return "red";
+    if(s.includes("collect")) return "teal";
     if(s.includes("delet")) return "red";
     return "blue";
   };
@@ -393,6 +406,7 @@ export function AllOrdersPage() {
     if (s.includes("pend"))     return "Laukiama";
     if (s.includes("pause"))    return "Sustabdytas";
     if (s.includes("cancel") ) return "Atšauktas";
+    if(s.includes("collect")) return "Surinktas";
     if(s.includes("delet")) return "Ištrintas";
     return status;
   };
@@ -417,6 +431,7 @@ export function AllOrdersPage() {
       (statusFilter === "reserved"  && (rs === "reserved" || s.includes("reserved"))) ||
       (statusFilter === "paused"    && s.includes("pause")) ||
       (statusFilter === "completed" && (s.includes("complete") || rs === "completed")) ||
+      (statusFilter === "collected" && s.includes("collect")) ||
       (statusFilter === "cancelled" && (s.includes("cancel")));
     const matchProposal =
       proposalFilter === "all" ||
@@ -441,37 +456,41 @@ export function AllOrdersPage() {
   }).length;
   const completedCount = ordersWithSystem.filter((o) => o.status?.toLowerCase().includes("complete")).length;
   const specialCount   = ordersWithSystem.filter((o) => o.orderType === OrderType.SpecialOffer).length;
+  const collectedCount = ordersWithSystem.filter((o) => o.status?.toLowerCase().includes("collected")).length;
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className="page all-orders-page">
+      <div className="all-orders-content">
+        <div className="page-header">
         <div className="page-header-left">
           <h1 className="page-title">Užsakymų sąrašas</h1>
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 16 }}>
+      <div className="all-orders-summary-grid">
         <SummaryCard label="Visi užsakymai" value={ordersWithSystem.length}  color="var(--brand)" />
         <SummaryCard label="Laukiami"       value={pendingCount}   color="#d97706" />
         <SummaryCard label="Užbaigti"       value={completedCount} color="var(--success)" />
-        <SummaryCard label="Atšaukti"       value={cancelledCount} color="#ef4444" />
         <SummaryCard label="Nori pasiūlymo" value={specialCount}   color="#6366f1" />
+        <SummaryCard label="Surinkti" value={collectedCount}   color="teal" />
+        <SummaryCard label="Atšaukti"       value={cancelledCount} color="#ef4444" />
       </div>
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
+      <div className="all-orders-toolbar">
+        <div className="all-orders-toolbar-filters">
         <input
-          className="input"
+          className="input all-orders-search"
           placeholder="Ieškoti pagal vardą, el. paštą, įm. kodą…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{ flex: 1, maxWidth: 300 }}
         />
-        <div style={{ display: "flex", gap: 6 }}>
+        <div className="all-orders-filter-group">
           {([
             { key: "all",       label: "Visi" },
             { key: "reserved",  label: "Rezervuoti" },
             { key: "paused",    label: "Sustabdyti" },
             { key: "completed", label: "Užbaigti" },
+            { key: "collected", label: "Surinkti" },
             { key: "cancelled", label: "Atšaukti" },
           ] as { key: StatusFilter; label: string }[]).map(({ key, label }) => (
             <button key={key} onClick={() => setStatusFilter(key)}
@@ -480,7 +499,7 @@ export function AllOrdersPage() {
             </button>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 6, borderLeft: "1px solid var(--border)", paddingLeft: 10 }}>
+        <div className="all-orders-filter-group all-orders-filter-group-proposals">
           {(["all", "special", "noSpecial"] as ProposalFilter[]).map((f) => (
             <button key={f} onClick={() => setProposalFilter(f)}
               className={`btn btn-sm ${proposalFilter === f ? "btn-primary" : "btn-secondary"}`}>
@@ -488,7 +507,8 @@ export function AllOrdersPage() {
             </button>
           ))}
         </div>
-        <span style={{ fontSize: 13, color: "var(--text-2)", marginLeft: "auto", fontWeight: 500 }}>
+        </div>
+        <span className="all-orders-count">
           {filtered.length} iš {ordersWithSystem.length}
         </span>
       </div>
@@ -543,6 +563,7 @@ export function AllOrdersPage() {
                 const isCompleted  = order.status?.toLowerCase().includes("complete");
                 const isDbReserved = order.status?.toLowerCase().includes("reserved");
                 const isPaused     = order.status?.toLowerCase().includes("pause");
+                const isCollected   = order.status?.toLowerCase().includes("collected");
                 const isPending    = order.status?.toLowerCase().includes("pend");
                 const isCancelled  = (
                   order.status?.toLowerCase().includes("cancel") ||
@@ -687,7 +708,7 @@ export function AllOrdersPage() {
                               minWidth: 190, padding: "4px 0",
                             }}>
                               {/* Reserve — only for PENDING */}
-                              {((isPending || (!isReserved && !isPaused && !isCompleted ))) && !isCancelled && (
+                              {((isPending || (!isReserved && !isPaused && !isCompleted && !isCollected))) && !isCancelled && (
                                 <MenuItem
                                   icon="pi pi-check-circle"
                                   label={isWorking ? "Rezervuojama…" : "Rezervuoti"}
@@ -697,8 +718,19 @@ export function AllOrdersPage() {
                                 />
                               )}
 
-                              {/* Complete — only for RESERVED */}
+                              {/* Collected — only for RESERVED */}
                               {(isReserved && !isPaused) && (
+                                <MenuItem
+                                  icon="pi pi-flag"
+                                  label="Surinkti"
+                                  color="teal"
+                                  onClick={(e) => handleCollected(order, e)}
+                                />
+                              )}
+
+
+                              {/* Complete — only for RESERVED */}
+                              {(isReserved && !isPaused || isCollected) && (
                                 <MenuItem
                                   icon="pi pi-flag"
                                   label="Užbaigti"
@@ -841,6 +873,8 @@ export function AllOrdersPage() {
         </div>
       )}
 
+      </div>
+
       {modalOrder && (
         <LowStockModal
           order={modalOrder}
@@ -851,6 +885,70 @@ export function AllOrdersPage() {
       )}
 
       <style>{`
+        .all-orders-page { max-width: none; }
+        .all-orders-content {
+          width: min(100%, 1320px);
+          margin: 0 auto;
+        }
+        .all-orders-summary-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 10px;
+          margin-bottom: 16px;
+        }
+        .all-orders-toolbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 14px;
+          flex-wrap: wrap;
+        }
+        .all-orders-toolbar-filters {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex: 1 1 0;
+          min-width: 0;
+          flex-wrap: wrap;
+        }
+        .all-orders-search {
+          flex: 0 1 300px;
+          max-width: 300px;
+          min-width: 220px;
+        }
+        .all-orders-filter-group {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        .all-orders-filter-group-proposals {
+          border-left: 1px solid var(--border);
+          padding-left: 10px;
+        }
+        .all-orders-count {
+          font-size: 13px;
+          color: var(--text-2);
+          font-weight: 500;
+          white-space: nowrap;
+          margin-left: auto;
+        }
+        @media (max-width: 900px) {
+          .all-orders-count {
+            width: 100%;
+            text-align: right;
+          }
+        }
+        @media (max-width: 720px) {
+          .all-orders-search {
+            flex-basis: 100%;
+            max-width: none;
+          }
+          .all-orders-filter-group-proposals {
+            border-left: none;
+            padding-left: 0;
+          }
+        }
         .order-row:hover { background: var(--surface-2) !important; }
         .menu-item:hover { background: var(--surface-2); }
         .order-badge-lg { font-size: 12px; }
